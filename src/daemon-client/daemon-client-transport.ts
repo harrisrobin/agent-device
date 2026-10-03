@@ -213,7 +213,7 @@ export async function readRemoteDaemonHealth(
   probeTimeoutMs?: number,
   callerSignal?: AbortSignal,
 ): Promise<RemoteDaemonHealth> {
-  const health = await readDaemonHttpHealth(info, probeTimeoutMs, { signal: callerSignal });
+  const health = await readDaemonHttpHealth(info, probeTimeoutMs, callerSignal);
   if (!info.baseUrl || !health.reachable) return health;
   // Every link a command RPC crosses has to speak the client's protocol: a proxy that reports a
   // skewed daemon behind it fails here, before the RPC, exactly like a skewed proxy does.
@@ -236,16 +236,10 @@ export async function readRemoteDaemonHealth(
   return health;
 }
 
-export async function readDaemonHttpHealth(
+async function readDaemonHttpHealth(
   info: DaemonInfo,
   probeTimeoutMs?: number,
-  /**
-   * `signal` lets a caller that races this health read against another probe retire the request
-   * once the race is decided. `budgetOverridesHealthCheckCap` opts out of the health-check timeouts,
-   * which are a policy for reachability probes: the post-timeout liveness probe (#3177) carries its
-   * own absolute budget, and truncating it to 500ms would make a slow-to-answer daemon read as dead.
-   */
-  options: Readonly<{ signal?: AbortSignal; budgetOverridesHealthCheckCap?: boolean }> = {},
+  callerSignal?: AbortSignal,
 ): Promise<RemoteDaemonHealth> {
   const endpoint = info.baseUrl
     ? buildDaemonHttpUrl(info.baseUrl, 'health')
@@ -255,18 +249,15 @@ export async function readDaemonHttpHealth(
   if (!endpoint) return { reachable: false };
   const url = new URL(endpoint);
   const transport = await loadNodeHttpRequester(url.protocol);
-  const healthCheckCapMs = info.baseUrl
-    ? REMOTE_DAEMON_HEALTHCHECK_TIMEOUT_MS
-    : LOCAL_DAEMON_HEALTHCHECK_TIMEOUT_MS;
-  const timeoutMs =
-    options.budgetOverridesHealthCheckCap && probeTimeoutMs !== undefined
-      ? probeTimeoutMs
-      : Math.min(healthCheckCapMs, probeTimeoutMs ?? Number.POSITIVE_INFINITY);
+  const timeoutMs = Math.min(
+    info.baseUrl ? REMOTE_DAEMON_HEALTHCHECK_TIMEOUT_MS : LOCAL_DAEMON_HEALTHCHECK_TIMEOUT_MS,
+    probeTimeoutMs ?? Number.POSITIVE_INFINITY,
+  );
   if (timeoutMs <= 0) return { reachable: false, timedOut: true };
   // `timedOut` is keyed on the probe's own budget alone: a caller abort must never read as a
   // timeout, because a timed-out probe on an RPC-capped budget is answered as the RPC timing out.
   const timeoutSignal = AbortSignal.timeout(Math.ceil(timeoutMs));
-  const signal = options.signal ? AbortSignal.any([timeoutSignal, options.signal]) : timeoutSignal;
+  const signal = callerSignal ? AbortSignal.any([timeoutSignal, callerSignal]) : timeoutSignal;
   return await new Promise((resolve) => {
     const headers = info.baseUrl ? buildDaemonHttpAuthHeaders(info.token) : {};
     const unreachable = (): RemoteDaemonHealth =>
