@@ -373,7 +373,7 @@ async function retryAfterRemoteInstanceMismatch(
   options: SendRequestOptions,
 ): Promise<DaemonResponse> {
   invalidateRemoteDaemonHealth(info);
-  const probeTimeoutMs = remainingRemoteRequestTimeoutMs(
+  const probeTimeoutMs = await remainingRemoteRequestTimeoutMs(
     info,
     req,
     statePaths,
@@ -387,13 +387,19 @@ async function retryAfterRemoteInstanceMismatch(
   refuseAbortedRequest(options.signal, req.meta?.requestId);
   const timedOutRpcBudgetMs = deadlineCappedProbeTimeoutBudgetMs(health, timeoutMs, probeTimeoutMs);
   if (timedOutRpcBudgetMs !== undefined) {
-    throw handleRequestTimeout({
+    throw await handleRequestTimeout({
       info,
       statePaths,
       ...timeoutRequestContext(req, true, timedOutRpcBudgetMs),
     });
   }
-  const remainingMs = remainingRemoteRequestTimeoutMs(info, req, statePaths, timeoutMs, deadline);
+  const remainingMs = await remainingRemoteRequestTimeoutMs(
+    info,
+    req,
+    statePaths,
+    timeoutMs,
+    deadline,
+  );
   if (!health.reachable) {
     throw new AppError('COMMAND_FAILED', 'Remote daemon is unavailable', {
       daemonBaseUrl: info.baseUrl,
@@ -426,17 +432,17 @@ function deadlineCappedProbeTimeoutBudgetMs(
   return probeTimeoutMs <= REMOTE_DAEMON_HEALTHCHECK_TIMEOUT_MS ? timeoutMs : undefined;
 }
 
-function remainingRemoteRequestTimeoutMs(
+async function remainingRemoteRequestTimeoutMs(
   info: DaemonInfo,
   req: DaemonRequest,
   statePaths: DaemonPaths,
   timeoutMs: number | undefined,
   deadline: number | undefined,
-): number | undefined {
+): Promise<number | undefined> {
   if (deadline === undefined || timeoutMs === undefined) return undefined;
   const remainingMs = deadline - performance.now();
   if (remainingMs > 0) return remainingMs;
-  throw handleRequestTimeout({
+  throw await handleRequestTimeout({
     info,
     statePaths,
     ...timeoutRequestContext(req, true, timeoutMs),
@@ -587,14 +593,15 @@ async function sendSocketRequest(
         ? setTimeout(() => {
             settled = true;
             detachCallerAbort();
+            // Destroy first: the daemon cancels exactly this request when the connection dies, and
+            // that cancel is the recovery it needs (#3177). The liveness probe the timeout handler
+            // runs must be a FRESH connection, never the one being torn down.
             socket.destroy();
-            reject(
-              handleRequestTimeout({
-                info,
-                statePaths,
-                ...timeoutRequestContext(req, false, timeoutMs),
-              }),
-            );
+            void handleRequestTimeout({
+              info,
+              statePaths,
+              ...timeoutRequestContext(req, false, timeoutMs),
+            }).then(reject, reject);
           }, timeoutMs)
         : undefined;
     // Destroying the connection is what makes the daemon mark the request canceled. The timeout
@@ -802,14 +809,21 @@ async function sendHttpRequest(
     const timeoutHandle =
       typeof timeoutMs === 'number'
         ? setTimeout(() => {
-            rejectOnce(
-              handleRequestTimeout({
-                info,
-                statePaths,
-                ...timeoutRequestContext(req, remote, timeoutMs),
-              }),
-            );
+            // Claim the settle before destroying: the transport error that `destroy()` surfaces
+            // must not describe this outcome. The daemon cancels exactly this request when the
+            // connection dies, and that request-scoped cancel is the recovery it needs (#3177).
+            settled = true;
+            detachCallerAbort();
+            // The timeout handler's liveness probe then asks on a FRESH connection, so the reset
+            // decision measures the daemon instead of assuming it. Its AppError lands only after
+            // that probe, so it takes the raw reject past the guard `rejectOnce` would apply to
+            // the claimed settle.
             request.destroy();
+            void handleRequestTimeout({
+              info,
+              statePaths,
+              ...timeoutRequestContext(req, remote, timeoutMs),
+            }).then(reject, reject);
           }, timeoutMs)
         : undefined;
 
