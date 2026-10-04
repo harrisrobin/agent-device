@@ -93,7 +93,11 @@ function probeHttpHealth(httpPort: number, deadlineAtMs: number): ProbeLeg {
     try {
       const transport = await loadNodeHttpRequester('http:');
       const request = transport.request(
-        { host: '127.0.0.1', port: String(httpPort), path: '/health', method: 'GET' },
+        // `agent: false` is load-bearing, not hygiene: since Node 19 the global agent keeps sockets
+        // alive, so a pooled request would ride an idle socket from an earlier command's health read
+        // instead of the FRESH connection this probe exists to make — and a half-torn-down pooled
+        // socket would answer "silent", resetting a live daemon.
+        { host: '127.0.0.1', port: String(httpPort), path: '/health', method: 'GET', agent: false },
         (res) => {
           // Any status is an answer: the health route is served before any request handling, so
           // reaching it proves the event loop serves fresh requests. Drain so the response cannot

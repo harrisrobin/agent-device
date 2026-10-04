@@ -12,6 +12,7 @@ import { test } from 'vitest';
 
 import { PUBLIC_COMMANDS } from '@agent-device/command-registry/catalog';
 import { resolveCommandTimeoutPolicy } from '@agent-device/command-registry/registry';
+import { loadNodeHttpRequester } from '@agent-device/host-kit/transport';
 import {
   LIVENESS_PROBE_BUDGET_MS,
   probeDaemonResponsive,
@@ -88,6 +89,81 @@ test('a 5xx answer is still an answer: the finding is liveness, not reachability
   });
   await withLoopback(server, async (port) => {
     assert.equal(await probeDaemonResponsive(daemonInfo({ httpPort: port })), true);
+  });
+});
+
+test('headers alone answer: a daemon that stalls mid-body is still served', async (t) => {
+  if (await skipWhenLoopbackUnavailable(t)) return;
+  // The finding is "the event loop served a fresh request", and that is already proven by a status
+  // line. A reader that waits for the whole BODY would call a daemon which answers and then stalls
+  // mid-response silent — the negative verdict would reset a live shared daemon, which is the bug
+  // #3177 is about. (A body-reading health helper does exactly that for its own purposes; the probe
+  // must not borrow it.) So the affirmative must arrive by the deadline's FIRST fraction, not at it.
+  const stallingBodyServer = http.createServer((_req, res) => {
+    res.writeHead(200, { 'content-length': '1000' });
+    // Node buffers headers with the first chunk, so this is what makes the status line actually
+    // reach the client. The declared body is never sent: headers delivered, body pending forever.
+    res.flushHeaders();
+    res.on('error', () => {});
+  });
+  await withLoopback(stallingBodyServer, async (port) => {
+    const startedAt = Date.now();
+    assert.equal(
+      await probeDaemonResponsive(daemonInfo({ httpPort: port })),
+      true,
+      'a stalled body must not be read as an unresponsive daemon',
+    );
+    assert.ok(
+      Date.now() - startedAt < LIVENESS_PROBE_BUDGET_MS / 2,
+      'the answer is headers-arrival, not the deadline running out',
+    );
+  });
+});
+
+test('the health leg rides a fresh connection, never the keep-alive pool', async (t) => {
+  if (await skipWhenLoopbackUnavailable(t)) return;
+  // Since Node 19 `http.globalAgent` has `keepAlive: true`, so a default request can REUSE an idle
+  // socket from an earlier command's health read. Reuse would make "did this probe connect?" a
+  // question about a socket this probe never opened — and a pooled socket the daemon had half torn
+  // down would answer silent, resetting a live daemon. Discriminator: on a reused connection the
+  // server sees the SAME socket object for both requests, so `clientSockets.size` is 1 for reuse
+  // and 2 for a fresh connection. The prime must use the SAME module object the probe loads
+  // (`loadNodeHttpRequester('http:')` resolves the real `node:http`) or the pool holds no candidate
+  // and the test proves nothing.
+  // `keepAlive` is set at runtime (Node >=19) but not on the base `Agent` type.
+  if (!(http.globalAgent as { keepAlive?: boolean }).keepAlive) return; // pool cannot prime without keep-alive
+  const clientSockets = new Set<net.Socket>();
+  let probeRequests = 0;
+  let primed = false;
+  const server = http.createServer((req, res) => {
+    clientSockets.add(req.socket);
+    req.socket.on('error', () => {});
+    if (primed) probeRequests += 1;
+    else primed = true;
+    res.end('{}');
+  });
+  const httpRequester = await loadNodeHttpRequester('http:');
+  await withLoopback(server, async (port) => {
+    // Prime: a full keep-alive request/response whose socket returns to the global pool.
+    await new Promise<void>((resolve, reject) => {
+      const request = httpRequester.request(
+        { host: '127.0.0.1', port, path: '/health', method: 'GET' },
+        (res) => {
+          res.resume();
+          res.on('end', resolve);
+        },
+      );
+      request.on('error', reject);
+      request.end();
+    });
+    assert.equal(clientSockets.size, 1, 'the prime must have connected');
+    assert.equal(await probeDaemonResponsive(daemonInfo({ httpPort: port })), true);
+    assert.equal(probeRequests, 1, 'the health leg must actually have been asked');
+    assert.equal(
+      clientSockets.size,
+      2,
+      'the probe rode the primed keep-alive socket instead of opening a fresh connection',
+    );
   });
 });
 
