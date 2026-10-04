@@ -33,6 +33,7 @@ type RequestHandlerChainParams = {
   leaseRegistry: LeaseRegistry;
   providerRuntimeIds?: readonly string[];
   providerRuntimeRequiredIds?: readonly string[];
+  providerCredentialFingerprints?: Readonly<Record<string, string>>;
   leaseLifecycleProvider?: LeaseLifecycleProvider;
   cloudArtifactProvider?: CloudArtifactProvider;
   providerAppCatalog?: ProviderAppCatalog;
@@ -150,6 +151,7 @@ async function runLeaseHandler(
       leaseRegistry: params.leaseRegistry,
       providerRuntimeIds: params.providerRuntimeIds,
       providerRuntimeRequiredIds: params.providerRuntimeRequiredIds,
+      providerCredentialFingerprints: params.providerCredentialFingerprints,
       leaseLifecycleProvider: params.leaseLifecycleProvider,
       cloudArtifactProvider: params.cloudArtifactProvider,
     }),

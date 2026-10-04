@@ -1,3 +1,5 @@
+import { AppError } from '@agent-device/kernel/errors';
+
 export const CLOUD_WEBDRIVER_PROVIDERS = {
   browserStack: 'browserstack',
   awsDeviceFarm: 'aws-device-farm',
@@ -12,6 +14,28 @@ export function isCloudWebDriverProviderName(
   provider: string | undefined,
 ): provider is CloudWebDriverKnownProviderName {
   return provider !== undefined && CLOUD_WEBDRIVER_KNOWN_PROVIDERS.has(provider);
+}
+
+/** The environment variables that hold BrowserStack credentials. */
+export const BROWSERSTACK_CREDENTIAL_VARIABLES = {
+  username: 'BROWSERSTACK_USERNAME',
+  accessKey: 'BROWSERSTACK_ACCESS_KEY',
+} as const;
+
+/** The one reader of BrowserStack credentials in the environment. */
+export function requireBrowserStackCredentials(
+  env: Readonly<Record<string, string | undefined>>,
+  consumer: string,
+): { username: string; accessKey: string } {
+  const read = (name: string): string => {
+    const value = env[name];
+    if (value) return value;
+    throw new AppError('INVALID_ARGS', `${consumer} requires ${name} in the environment.`);
+  };
+  return {
+    username: read(BROWSERSTACK_CREDENTIAL_VARIABLES.username),
+    accessKey: read(BROWSERSTACK_CREDENTIAL_VARIABLES.accessKey),
+  };
 }
 
 const BROWSERSTACK_APP_SCHEME = 'bs://';

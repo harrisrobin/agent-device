@@ -3,6 +3,9 @@ import type {
   RemoteConfigMetroOptions,
 } from '@agent-device/contracts/remote';
 import type { CliFlags } from '@agent-device/contracts/command';
+import type { EnvMap } from '@agent-device/kernel/source-value';
+import type { RemoteConfigProfile } from '../../remote/remote-config-schema.ts';
+import { providerCredentialFingerprint } from '../../provider-credential-fingerprint.ts';
 
 /**
  * Hosted-provider device-feature fields (orientation, geolocation, locale, network shape, app
@@ -52,4 +55,17 @@ export function readMetroProfileFields(flags: CliFlags): RemoteConfigMetroOption
     metroNoInstallDeps: flags.metroNoInstallDeps,
     launchUrl: flags.launchUrl,
   };
+}
+
+/**
+ * The credential fingerprint a profile records for the local daemon. A remote daemon reads its
+ * credentials upstream, so a profile that targets one records none.
+ */
+export function readProviderCredentialProfileField(
+  provider: string,
+  flags: Pick<CliFlags, 'daemonBaseUrl'>,
+  env: EnvMap,
+): Pick<RemoteConfigProfile, 'providerCredentialFingerprint'> {
+  if (flags.daemonBaseUrl) return {};
+  return { providerCredentialFingerprint: providerCredentialFingerprint(provider, env) };
 }

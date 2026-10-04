@@ -3,7 +3,7 @@ import type { RemoteConfigProfile } from '../../remote/remote-config-schema.ts';
 import { AppError } from '@agent-device/kernel/errors';
 import type { CliFlags } from '@agent-device/contracts/command';
 import { type EnvMap } from '@agent-device/kernel/source-value';
-import { readMetroProfileFields } from './profile-fields.ts';
+import { readMetroProfileFields, readProviderCredentialProfileField } from './profile-fields.ts';
 import { persistAndResolveGeneratedProfile } from './generated-config.ts';
 import { resolveRequestedLeaseBackend } from '../commands/connection-runtime.ts';
 import {
@@ -19,7 +19,10 @@ export function resolveLimrunConnectProfile(options: {
   env?: EnvMap;
 }): { flags: CliFlags; remoteConfigPath: string } {
   const env = options.env ?? process.env;
-  const profile = buildLimrunRemoteProfile({ flags: options.flags });
+  const profile = {
+    ...buildLimrunRemoteProfile({ flags: options.flags }),
+    ...readProviderCredentialProfileField('limrun', options.flags, env),
+  };
   const credentials = readLimrunCredentials(env);
   const platform = profile.leaseBackend === 'ios-instance' ? 'ios' : 'android';
   if (!credentials?.apiKey && !credentials?.instances?.[platform]) {

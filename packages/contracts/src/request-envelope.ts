@@ -98,4 +98,5 @@ export type InternalRequestOptions = AgentDeviceClientConfig &
     leaseTtlMs?: number;
     provider?: string;
     providerSessionId?: string;
+    providerCredentialFingerprint?: string;
   };

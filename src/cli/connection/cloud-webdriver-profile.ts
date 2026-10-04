@@ -5,6 +5,7 @@ import {
   rejectBrowserStackOnlyDeviceFeatures,
   type CloudWebDriverKnownProviderName,
 } from '@agent-device/provider-webdriver';
+import { requireBrowserStackCredentials } from '@agent-device/provider-webdriver/providers';
 import type { RemoteConfigProfile } from '../../remote/remote-config-schema.ts';
 import { AppError } from '@agent-device/kernel/errors';
 import type { PlatformSelector } from '@agent-device/kernel/device';
@@ -12,7 +13,11 @@ import type { CliFlags } from '@agent-device/contracts/command';
 import fs from 'node:fs';
 import path from 'node:path';
 import { type EnvMap } from '@agent-device/kernel/source-value';
-import { readCloudDeviceFeatureProfileFields, readMetroProfileFields } from './profile-fields.ts';
+import {
+  readCloudDeviceFeatureProfileFields,
+  readMetroProfileFields,
+  readProviderCredentialProfileField,
+} from './profile-fields.ts';
 import { persistAndResolveGeneratedProfile } from './generated-config.ts';
 import { resolveRequestedLeaseBackend } from '../commands/connection-runtime.ts';
 import { buildConnectClientId } from './client-id.ts';
@@ -42,6 +47,7 @@ export function resolveCloudWebDriverConnectProfile(options: {
     session: options.flags.session,
     ...providerConfig,
     ...readMetroProfileFields(options.flags),
+    ...readProviderCredentialProfileField(options.provider, options.flags, options.env ?? {}),
   };
   return persistAndResolveGeneratedProfile({
     stateDir: options.stateDir,
@@ -93,8 +99,7 @@ function browserStackProfileFields(options: {
   env?: EnvMap;
   cwd: string;
 }): RemoteConfigProfile {
-  requireEnv(options.env, 'BROWSERSTACK_USERNAME', 'connect browserstack');
-  requireEnv(options.env, 'BROWSERSTACK_ACCESS_KEY', 'connect browserstack');
+  requireBrowserStackCredentials(options.env ?? {}, 'connect browserstack');
   const platform = requireCloudWebDriverPlatform(
     options.flags.platform,
     'connect browserstack requires --platform ios|android.',
@@ -188,12 +193,6 @@ function requireCloudWebDriverPlatform(
 function requireFlag(value: string | undefined, message: string): string {
   if (value) return value;
   throw new AppError('INVALID_ARGS', message);
-}
-
-function requireEnv(env: EnvMap | undefined, name: string, command: string): string {
-  const value = env?.[name];
-  if (value) return value;
-  throw new AppError('INVALID_ARGS', `${command} requires ${name} in the environment.`);
 }
 
 function requireAwsProfileValue(

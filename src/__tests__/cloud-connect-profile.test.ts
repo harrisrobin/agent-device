@@ -16,6 +16,7 @@ import { resolveCloudWebDriverConnectProfile } from '../cli/connection/cloud-web
 import { AppError } from '@agent-device/kernel/errors';
 import { verifyLimrunConnection } from '@agent-device/provider-limrun';
 import { providerWebDriver } from '../provider-webdriver.ts';
+import { providerCredentialFingerprint } from '../provider-credential-fingerprint.ts';
 import { mkdtempForTestSync } from './test-utils/tmp-dir.ts';
 
 vi.mock('../cli/auth-session.ts', async (importOriginal) => ({
@@ -187,6 +188,7 @@ test('connect limrun generates a local daemon remote profile', async () => {
       'leaseBackend',
       'leaseProvider',
       'platform',
+      'providerCredentialFingerprint',
       'runId',
       'session',
       'sessionIsolation',
@@ -263,6 +265,7 @@ test('connect limrun persists deferred Metro bridge settings', async () => {
       metroProjectRoot: '/tmp/app',
       metroProxyBaseUrl: 'https://metro.agent-device.dev',
       platform: 'ios',
+      providerCredentialFingerprint: providerCredentialFingerprint('limrun', process.env),
       runId: 'run-a',
       session: 'limrun-ios',
       sessionIsolation: 'tenant',

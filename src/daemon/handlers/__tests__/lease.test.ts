@@ -8,6 +8,10 @@ import type { DeviceLease } from '@agent-device/contracts/device';
 import { AppError } from '@agent-device/kernel/errors';
 import { clearRequestCanceled, markRequestCanceled } from '@agent-device/host-kit/request';
 import {
+  providerCredentialFingerprint,
+  providerCredentialFingerprints,
+} from '../../../provider-credential-fingerprint.ts';
+import {
   HUMAN_CONTROL_LEASE_REQUEST,
   HUMAN_CONTROL_SCOPE,
   createControlLatch,
@@ -174,4 +178,109 @@ test('a lease allocated without a provider keeps the TTL it was created with', a
   assert.equal(lease.heartbeatAt, lease.createdAt);
   assert.equal(lease.expiresAt, lease.createdAt + 60_000);
   assert.deepEqual(registry.listActiveLeases(), [lease]);
+});
+
+const LIMRUN_ATTACH_ENV = {
+  LIMRUN_API_KEY: 'lim-key',
+  LIM_IOS_INSTANCE_URL: 'https://region.limrun.example/v1/ios_x/api',
+  LIM_IOS_INSTANCE_TOKEN: 'ios-token',
+};
+const BROWSERSTACK_ENV = { BROWSERSTACK_USERNAME: 'user', BROWSERSTACK_ACCESS_KEY: 'key-1' };
+
+function providerAllocateRequest(
+  leaseProvider: string,
+  providerCredentialFingerprint: string | undefined,
+): DaemonRequest {
+  const request = allocateRequest();
+  return {
+    ...request,
+    meta: {
+      ...request.meta,
+      leaseProvider,
+      leaseBackend: 'ios-instance',
+      providerCredentialFingerprint,
+    },
+  };
+}
+
+async function allocateWithDaemonEnv(
+  req: DaemonRequest,
+  daemonEnv: Record<string, string>,
+): Promise<{ allocations: number; error?: AppError }> {
+  const registry = new LeaseRegistry();
+  let allocations = 0;
+  try {
+    await handleLeaseCommands({
+      req,
+      sessionName: req.session,
+      sessionStore: makeSessionStore('agent-device-provider-credentials-'),
+      leaseRegistry: registry,
+      providerCredentialFingerprints: providerCredentialFingerprints(daemonEnv),
+      leaseLifecycleProvider: {
+        allocate: async () => {
+          allocations += 1;
+          return {};
+        },
+      },
+    });
+  } catch (error) {
+    assert.deepEqual(registry.listActiveLeases(), []);
+    return { allocations, error: error as AppError };
+  }
+  return { allocations };
+}
+
+test('a daemon started with only LIMRUN_API_KEY refuses an attach-mode profile before allocation', async () => {
+  const outcome = await allocateWithDaemonEnv(
+    providerAllocateRequest('limrun', providerCredentialFingerprint('limrun', LIMRUN_ATTACH_ENV)),
+    { LIMRUN_API_KEY: 'lim-key' },
+  );
+
+  assert.equal(outcome.allocations, 0);
+  assert.equal(outcome.error?.code, 'INVALID_ARGS');
+  assert.equal(outcome.error?.details?.reason, 'provider-credentials-changed');
+  assert.equal(outcome.error?.details?.provider, 'limrun');
+  assert.match(String(outcome.error?.details?.hint), /agent-device daemon stop/);
+});
+
+test('a daemon holding rotated BrowserStack keys refuses before allocation', async () => {
+  const outcome = await allocateWithDaemonEnv(
+    providerAllocateRequest(
+      'browserstack',
+      providerCredentialFingerprint('browserstack', {
+        ...BROWSERSTACK_ENV,
+        BROWSERSTACK_ACCESS_KEY: 'key-2',
+      }),
+    ),
+    BROWSERSTACK_ENV,
+  );
+
+  assert.equal(outcome.allocations, 0);
+  assert.equal(outcome.error?.details?.reason, 'provider-credentials-changed');
+  assert.equal(outcome.error?.details?.provider, 'browserstack');
+});
+
+test.for([
+  ['limrun', LIMRUN_ATTACH_ENV],
+  ['browserstack', BROWSERSTACK_ENV],
+] as const)(
+  'a daemon holding the %s credentials connect saw allocates',
+  async ([provider, env]) => {
+    const outcome = await allocateWithDaemonEnv(
+      providerAllocateRequest(provider, providerCredentialFingerprint(provider, env)),
+      env,
+    );
+
+    assert.equal(outcome.error, undefined);
+    assert.equal(outcome.allocations, 1);
+  },
+);
+
+test('a request without a fingerprint is not checked', async () => {
+  const outcome = await allocateWithDaemonEnv(providerAllocateRequest('limrun', undefined), {
+    LIMRUN_API_KEY: 'lim-key',
+  });
+
+  assert.equal(outcome.error, undefined);
+  assert.equal(outcome.allocations, 1);
 });

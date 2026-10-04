@@ -147,6 +147,8 @@ export type DaemonRequestMeta = {
   leaseProvider?: string;
   deviceKey?: string;
   clientId?: string;
+  /** What `connect` saw of the lease provider's credentials, compared by a local daemon on allocation. */
+  providerCredentialFingerprint?: string;
   sessionIsolation?: SessionIsolationMode;
   uploadedArtifactId?: string;
   clientArtifactPaths?: Record<string, string>;

@@ -106,6 +106,7 @@ export type RequestRouterDeps = {
   hostDiagnostics?: HostDiagnostics;
   providerRuntimeIds?: readonly string[];
   providerRuntimeRequiredIds?: readonly string[];
+  providerCredentialFingerprints?: Readonly<Record<string, string>>;
   leaseLifecycleProvider?: LeaseLifecycleProvider;
   cloudArtifactProvider?: CloudArtifactProvider;
   providerAppCatalog?: ProviderAppCatalog;
@@ -163,6 +164,7 @@ export function createRequestHandler(deps: RequestRouterDeps): DaemonInvokeFn {
     hostDiagnostics,
     providerRuntimeIds,
     providerRuntimeRequiredIds,
+    providerCredentialFingerprints,
     leaseLifecycleProvider,
     cloudArtifactProvider,
     providerAppCatalog,
@@ -328,6 +330,7 @@ export function createRequestHandler(deps: RequestRouterDeps): DaemonInvokeFn {
       leaseLifecycleProvider,
       providerRuntimeIds,
       providerRuntimeRequiredIds,
+      providerCredentialFingerprints,
       cloudArtifactProvider,
       providerAppCatalog,
       invoke: recordNestedRequests(handleRequest, dispatchLedger),

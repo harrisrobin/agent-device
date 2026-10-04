@@ -18,6 +18,14 @@ const INSTANCE_VARS = {
   ],
 } as const;
 
+/** Every variable that selects which Limrun account or instance the credentials reach. */
+export const LIMRUN_CREDENTIAL_VARIABLES: readonly string[] = [
+  'LIMRUN_API_KEY',
+  'LIMRUN_REGION',
+  ...INSTANCE_VARS.ios,
+  ...INSTANCE_VARS.android,
+];
+
 /** The variables that give access to an existing instance of a platform. */
 export function limrunInstanceVariables(platform: 'ios' | 'android'): readonly string[] {
   return INSTANCE_VARS[platform];

@@ -138,6 +138,7 @@ export async function materializeRemoteConnectionForCommand(options: {
       nextState,
       nextFlags,
       initialApp,
+      providerCredentialFingerprint: remoteConfig.profile.providerCredentialFingerprint,
       policy: leasePolicy,
     });
     nextState = materializedLease.state;
@@ -318,6 +319,7 @@ async function materializeLeaseForCommand(options: {
   nextState: RemoteConnectionState;
   nextFlags: CliFlags;
   initialApp?: string;
+  providerCredentialFingerprint?: string;
   policy: ConnectionLeasePolicy;
 }): Promise<{
   state: RemoteConnectionState;
@@ -372,6 +374,7 @@ async function materializeLeaseForCommand(options: {
     policy,
     nextFlags,
     options.initialApp,
+    options.providerCredentialFingerprint,
   );
   const lease = materializedLease.lease;
   nextFlags.leaseId = lease.leaseId;
@@ -858,6 +861,7 @@ async function allocateOrReuseLease(
   policy: ConnectionLeasePolicy,
   flags: CliFlags,
   initialApp?: string,
+  providerCredentialFingerprint?: string,
 ): Promise<{ lease: Lease; acquired: boolean }> {
   const connection = buildRemoteConnectionRequestMetadata(state);
   if (state.leaseId && state.leaseBackend === leaseBackend) {
@@ -892,6 +896,7 @@ async function allocateOrReuseLease(
     awsAppArn: flags.awsAppArn,
     awsRegion: flags.awsRegion,
     awsInteractionMode: flags.awsInteractionMode,
+    providerCredentialFingerprint,
   });
   return { lease, acquired: true };
 }
