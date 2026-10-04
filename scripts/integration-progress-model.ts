@@ -136,7 +136,7 @@ function summarizeProviderScenarioFlagCoverage(files) {
     ['iosSimulatorDeviceSet', 'iOS simulator-set scoping reaches inventory resolution'],
     ['androidDeviceAllowlist', 'Android serial allowlist reaches inventory resolution'],
     ['session', 'named session routing'],
-    ['targetApp', 'doctor target app discovery without opening a session'],
+    ['targetApp', 'doctor app check and app-scoped settings on an app not opened in session'],
     ['surface', 'macOS app/frontmost/desktop/menubar surfaces'],
     ['activity', 'Android explicit launch activity'],
     ['launchConsole', 'iOS simulator launch console capture'],
