@@ -68,7 +68,8 @@ test('request timeout hint names an Apple runner only on a declared Apple platfo
   );
 });
 
-test('a timed-out remote recording names the retry that returns the export', () => {
+test('a timed-out record stop on a surviving daemon names the retry that returns the export', () => {
+  // A remote client never touches the daemon's host, so its daemon survives by construction.
   assert.equal(
     resolveRequestTimeoutHint({
       remote: true,
@@ -78,7 +79,7 @@ test('a timed-out remote recording names the retry that returns the export', () 
       action: 'stop',
       session: 'recording',
     }),
-    'The remote daemon is still exporting the recording. Run agent-device record stop --session recording again to wait for that export and receive the completed recording.',
+    'The remote daemon may still be exporting the recording. Run agent-device record stop --session recording again to wait for that export and receive the completed recording.',
   );
   assert.equal(
     resolveRequestTimeoutHint({
@@ -88,10 +89,23 @@ test('a timed-out remote recording names the retry that returns the export', () 
       applePlatformDeclared: false,
       action: 'stop',
     }),
-    'The remote daemon is still exporting the recording. Run agent-device record stop again to wait for that export and receive the completed recording.',
+    'The remote daemon may still be exporting the recording. Run agent-device record stop again to wait for that export and receive the completed recording.',
   );
-  // A local timeout on an unreachable daemon resets it mid-export, so no keep-exporting promise
-  // is made; the wording says what happened to the daemon instead.
+  // A LOCAL daemon preserved across the timeout (#3199 declares `record` preserve-daemon) may
+  // still be exporting too, so it gets the same retry instead of the generic kept-alive wording.
+  assert.equal(
+    resolveRequestTimeoutHint({
+      remote: false,
+      resetDaemon: false,
+      command: 'record',
+      applePlatformDeclared: false,
+      action: 'stop',
+      session: 'recording',
+    }),
+    'The daemon may still be exporting the recording. Run agent-device record stop --session recording again to wait for that export and receive the completed recording.',
+  );
+  // A daemon the probe proved unresponsive was reset, and a reset daemon is no longer exporting:
+  // no keep-exporting promise is made, and the wording says what happened to it instead.
   assert.equal(
     resolveRequestTimeoutHint({
       remote: false,

@@ -133,14 +133,17 @@ export function resolveRequestTimeoutHint(params: {
   session?: string;
 }): string {
   const { remote, resetDaemon, command, applePlatformDeclared, session, action } = params;
+  // A daemon that survives this client window may still be exporting a `record stop` that ran out
+  // of time — a stop still queued for the device lock is dropped before any export starts, hence
+  // "may" — and a finished file stays retrievable by asking again. This holds whether the daemon
+  // survived because the request was remote or because `record` declares preserve-daemon (#3199).
+  // A reset daemon makes no such promise.
+  if (!resetDaemon && command === PUBLIC_COMMANDS.record && action === 'stop') {
+    return `The ${remote ? 'remote ' : ''}daemon may still be exporting the recording. Run agent-device record stop${
+      session ? ` --session ${session}` : ''
+    } again to wait for that export and receive the completed recording.`;
+  }
   if (remote) {
-    // A remote daemon survives this client window, so a `record stop` that ran out of time is still
-    // exporting there and its finished file stays retrievable by asking again.
-    if (command === PUBLIC_COMMANDS.record && action === 'stop') {
-      return `The remote daemon is still exporting the recording. Run agent-device record stop${
-        session ? ` --session ${session}` : ''
-      } again to wait for that export and receive the completed recording.`;
-    }
     return 'Retry with --debug and verify the remote daemon URL, auth token, and remote host logs.';
   }
   if (resetDaemon) {

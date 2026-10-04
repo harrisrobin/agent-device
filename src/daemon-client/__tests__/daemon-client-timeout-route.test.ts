@@ -118,12 +118,16 @@ function seedProtocolLockDir(paths: DaemonPaths, owner: { pid: number; startTime
   );
 }
 
-function buildRequest(command: string, platform: 'android' | 'ios' | undefined): DaemonRequest {
+function buildRequest(
+  command: string,
+  platform: 'android' | 'ios' | undefined,
+  positionals: readonly string[] = [],
+): DaemonRequest {
   return {
     token: 'test-token',
     session: 'default',
     command,
-    positionals: [],
+    positionals: [...positionals],
     flags: platform ? { platform } : {},
     meta: { requestId: 'req-timeout-route' },
   };
@@ -229,6 +233,7 @@ type RouteRow = Readonly<{
   transport: 'http' | 'socket' | 'remote';
   command: string;
   platform: 'android' | 'ios' | undefined;
+  positionals?: readonly string[];
   afterFirst: 'answer' | 'refuse';
   hintPattern: RegExp;
   // The connections the stand-in must observe: 1 = the RPC only (route never probed),
@@ -286,6 +291,22 @@ const ROUTE_ROWS: readonly RouteRow[] = [
     resets: false,
   },
   {
+    // `record` declares preserve-daemon (#3199), so a LOCAL timed-out `record stop` reaches the
+    // retry hint without the probe ever running: the export the surviving daemon may still be
+    // finishing must not lose the runner to a sweep either (#3177 removed the sweep for all
+    // commands; this row pins that it is gone for the recorder too, on the real action positional).
+    name: 'names the record stop retry without probing a preserve-policy recorder',
+    transport: 'socket',
+    command: PUBLIC_COMMANDS.record,
+    platform: 'ios',
+    positionals: ['stop'],
+    afterFirst: 'answer',
+    hintPattern:
+      /^The daemon may still be exporting the recording\. Run agent-device record stop --session default again/,
+    connections: 1,
+    resets: false,
+  },
+  {
     // A remote client cannot reset anything on the daemon's host: no probe window, no sweep.
     name: 'keeps a remote timeout declarative',
     transport: 'remote',
@@ -339,7 +360,7 @@ for (const row of ROUTE_ROWS) {
       await expectRouteError(
         sendRequest(
           info,
-          buildRequest(row.command, row.platform),
+          buildRequest(row.command, row.platform, row.positionals),
           row.transport === 'remote' ? 'http' : row.transport,
           statePaths,
           TIMEOUT_MS,
