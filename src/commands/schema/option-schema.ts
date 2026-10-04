@@ -18,6 +18,15 @@ export type OptionSpec = {
   supportsCommand(command: string | null): boolean;
 };
 
+/**
+ * A flag that names the thing one invocation acts on, rather than something the host or operator
+ * prefers. A persistent default would apply it to every later command the shell runs: an
+ * `AGENT_DEVICE_TARGET_APP` or a `targetApp` in `config.json` would silently retarget every
+ * `doctor --app` check and every `settings permission` grant (#3179), which is a wrong-app hazard
+ * rather than a convenience. Such a flag is only ever writable per call.
+ */
+const PER_INVOCATION_TARGET_FLAG_KEYS: ReadonlySet<FlagKey> = new Set<FlagKey>(['targetApp']);
+
 const CONFIG_EXCLUDED_FLAG_KEYS = new Set<FlagKey>([
   'config',
   'remoteConfig',
@@ -25,9 +34,14 @@ const CONFIG_EXCLUDED_FLAG_KEYS = new Set<FlagKey>([
   'version',
   'batchSteps',
   'githubActionsArtifact',
+  ...PER_INVOCATION_TARGET_FLAG_KEYS,
 ]);
 
-const ENV_EXCLUDED_FLAG_KEYS = new Set<FlagKey>(['appsFilter', 'iosSimulatorDeviceSet']);
+const ENV_EXCLUDED_FLAG_KEYS = new Set<FlagKey>([
+  'appsFilter',
+  'iosSimulatorDeviceSet',
+  ...PER_INVOCATION_TARGET_FLAG_KEYS,
+]);
 
 const optionSpecs = buildOptionSpecs();
 const optionSpecByKey = new Map(optionSpecs.map((spec) => [spec.key, spec]));

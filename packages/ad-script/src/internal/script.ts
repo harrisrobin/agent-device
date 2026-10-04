@@ -413,6 +413,29 @@ function parseReplayScriptLine(line: string): SessionAction | null {
     return action;
   }
 
+  if (command === 'settings') {
+    // A recorded `--app` names the app the grant belongs to; the positionals are the settings
+    // grammar itself, so only this one option is lifted out of them. One with no value follows
+    // would replay as a bare `settings location on` and silently aim the grant at the session app,
+    // so the line is refused rather than half-read.
+    const positionals: string[] = [];
+    for (let index = 0; index < args.length; index += 1) {
+      const token = args[index]!;
+      if (token === '--app' || token === '--target-app') {
+        const value = args[index + 1];
+        if (value === undefined) {
+          throw new AppError('INVALID_ARGS', `Replay script line "${trimmed}" has no --app value.`);
+        }
+        action.flags.targetApp = value;
+        index += 1;
+        continue;
+      }
+      positionals.push(token);
+    }
+    action.positionals = positionals;
+    return action;
+  }
+
   if (command === 'record') {
     const positionals: string[] = [];
     for (let index = 0; index < args.length; index += 1) {

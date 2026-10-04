@@ -18,6 +18,7 @@ import {
   snapshotRuntimeFixture,
 } from '../../__tests__/snapshot-runtime-fixture.ts';
 import {
+  androidDevice,
   iosSimulatorDevice,
   macOsDevice,
   makeSession,
@@ -372,4 +373,231 @@ test('settings on macOS rejects wifi before dispatch with explicit subset guidan
       /wifi\|airplane\|location\|animations\|text-size remain unsupported on macOS/i,
     );
   }
+});
+
+// #3179: an app-scoped change can name the app it targets, so no app has to be open in session.
+test('settings permission dispatches an explicit app with no app bound to the session', async () => {
+  const sessionStore = makeSessionStore();
+  const sessionName = 'ios-permission-explicit-app';
+  sessionStore.set(sessionName, makeSession(sessionName, iosSimulatorDevice));
+
+  const response = await handleSnapshotCommands({
+    req: snapshotRequest(sessionName, 'settings', {
+      positionals: ['permission', 'grant', 'camera'],
+      flags: { targetApp: 'com.example.app' },
+    }),
+    sessionName,
+    logPath: '/tmp/daemon.log',
+    sessionStore,
+  });
+
+  expect(response?.ok).toBe(true);
+  expect(fixtureSettingsMutations.at(-1)).toMatchObject({
+    setting: 'permission',
+    state: 'grant',
+    appBundleId: 'com.example.app',
+    options: { permissionTarget: 'camera' },
+  });
+});
+
+test('settings permission prefers an explicit app over the session app', async () => {
+  const sessionStore = makeSessionStore();
+  const sessionName = 'ios-permission-app-over-session';
+  const session = makeSession(sessionName, iosSimulatorDevice);
+  session.appBundleId = 'com.session.app';
+  sessionStore.set(sessionName, session);
+
+  const response = await handleSnapshotCommands({
+    req: snapshotRequest(sessionName, 'settings', {
+      positionals: ['permission', 'deny', 'photos'],
+      flags: { targetApp: 'com.example.app' },
+    }),
+    sessionName,
+    logPath: '/tmp/daemon.log',
+    sessionStore,
+  });
+
+  expect(response?.ok).toBe(true);
+  expect(fixtureSettingsMutations.at(-1)?.appBundleId).toBe('com.example.app');
+});
+
+test('settings location on dispatches an explicit app on an iOS simulator', async () => {
+  const sessionStore = makeSessionStore();
+  const sessionName = 'ios-location-explicit-app';
+  sessionStore.set(sessionName, makeSession(sessionName, iosSimulatorDevice));
+
+  const response = await handleSnapshotCommands({
+    req: snapshotRequest(sessionName, 'settings', {
+      positionals: ['location', 'on'],
+      flags: { targetApp: 'com.example.app' },
+    }),
+    sessionName,
+    logPath: '/tmp/daemon.log',
+    sessionStore,
+  });
+
+  expect(response?.ok).toBe(true);
+  expect(fixtureSettingsMutations.at(-1)).toMatchObject({
+    setting: 'location',
+    state: 'on',
+    appBundleId: 'com.example.app',
+  });
+});
+
+test('settings location on refuses an app on Android, where the toggle is device-wide', async () => {
+  const sessionStore = makeSessionStore();
+  const sessionName = 'android-location-explicit-app';
+  sessionStore.set(sessionName, makeSession(sessionName, androidDevice));
+
+  const response = await handleSnapshotCommands({
+    req: snapshotRequest(sessionName, 'settings', {
+      positionals: ['location', 'on'],
+      flags: { targetApp: 'com.example.app' },
+    }),
+    sessionName,
+    logPath: '/tmp/daemon.log',
+    sessionStore,
+  });
+
+  expect(response?.ok).toBe(false);
+  if (response && !response.ok) {
+    expect(response.error.code).toBe('INVALID_ARGS');
+    expect(response.error.details?.reason).toBe('setting_app_not_consumed');
+    expect(response.error.details?.app).toBe('com.example.app');
+    expect(response.error.details?.dispatched).toBe('no');
+  }
+  expect(fixtureSettingsMutations).toHaveLength(0);
+});
+
+test('settings permission refuses an app on macOS, whose permissions are host-level', async () => {
+  const sessionStore = makeSessionStore();
+  const sessionName = 'macos-permission-explicit-app';
+  sessionStore.set(sessionName, makeSession(sessionName, macOsDevice));
+
+  const response = await handleSnapshotCommands({
+    req: snapshotRequest(sessionName, 'settings', {
+      positionals: ['permission', 'grant', 'screen-recording'],
+      flags: { targetApp: 'com.example.app' },
+    }),
+    sessionName,
+    logPath: '/tmp/daemon.log',
+    sessionStore,
+  });
+
+  expect(response?.ok).toBe(false);
+  if (response && !response.ok) {
+    expect(response.error.code).toBe('INVALID_ARGS');
+    expect(response.error.details?.reason).toBe('setting_app_not_consumed');
+  }
+  expect(fixtureSettingsMutations).toHaveLength(0);
+});
+
+test('settings location set refuses an app, which moves the device rather than an app', async () => {
+  const sessionStore = makeSessionStore();
+  const sessionName = 'ios-location-set-explicit-app';
+  sessionStore.set(sessionName, makeSession(sessionName, iosSimulatorDevice));
+
+  const response = await handleSnapshotCommands({
+    req: snapshotRequest(sessionName, 'settings', {
+      positionals: ['location', 'set', '37.77', '-122.42'],
+      flags: { targetApp: 'com.example.app' },
+    }),
+    sessionName,
+    logPath: '/tmp/daemon.log',
+    sessionStore,
+  });
+
+  expect(response?.ok).toBe(false);
+  if (response && !response.ok) {
+    expect(response.error.details?.reason).toBe('setting_app_not_consumed');
+  }
+  expect(fixtureSettingsMutations).toHaveLength(0);
+});
+
+test('an app-scoped refusal leaves a live ref frame standing', async () => {
+  const sessionStore = makeSessionStore();
+  const sessionName = 'android-location-frame';
+  const session = makeSession(sessionName, androidDevice);
+  sessionStore.set(sessionName, session);
+  activateCompleteRefFrame(session);
+
+  const response = await handleSnapshotCommands({
+    req: snapshotRequest(sessionName, 'settings', {
+      positionals: ['location', 'on'],
+      flags: { targetApp: 'com.example.app' },
+    }),
+    sessionName,
+    logPath: '/tmp/daemon.log',
+    sessionStore,
+  });
+
+  expect(response?.ok).toBe(false);
+  // The refusal is the point: the write leg expires the frame the moment it is admitted, so a
+  // request that never reached a device must leave the frame standing.
+  expect(refFrameState(session)).toBe('active');
+});
+
+test('a blank app is refused rather than dropped onto the session app', async () => {
+  const sessionStore = makeSessionStore();
+  const sessionName = 'ios-permission-blank-app';
+  const session = makeSession(sessionName, iosSimulatorDevice);
+  session.appBundleId = 'com.session.app';
+  sessionStore.set(sessionName, session);
+
+  const response = await handleSnapshotCommands({
+    req: snapshotRequest(sessionName, 'settings', {
+      positionals: ['permission', 'grant', 'camera'],
+      flags: { targetApp: '   ' },
+    }),
+    sessionName,
+    logPath: '/tmp/daemon.log',
+    sessionStore,
+  });
+
+  expect(response?.ok).toBe(false);
+  if (response && !response.ok) {
+    expect(response.error.details?.reason).toBe('setting_app_not_named');
+    expect(response.error.details?.dispatched).toBe('no');
+  }
+  expect(fixtureSettingsMutations).toHaveLength(0);
+});
+
+test('a named app on a settings read is refused rather than ignored', async () => {
+  const sessionStore = makeSessionStore();
+  const sessionName = 'ios-text-size-read-with-app';
+  sessionStore.set(sessionName, makeSession(sessionName, iosSimulatorDevice));
+
+  const response = await handleSnapshotCommands({
+    req: snapshotRequest(sessionName, 'settings', {
+      positionals: ['text-size'],
+      flags: { targetApp: 'com.example.app' },
+    }),
+    sessionName,
+    logPath: '/tmp/daemon.log',
+    sessionStore,
+  });
+
+  expect(response?.ok).toBe(false);
+  if (response && !response.ok) {
+    expect(response.error.details?.reason).toBe('setting_app_not_consumed');
+  }
+  expect(fixtureSettingsReads).toHaveLength(0);
+});
+
+test('a settings read still answers when only the session carries an app', async () => {
+  const sessionStore = makeSessionStore();
+  const sessionName = 'ios-text-size-read-session-app';
+  const session = makeSession(sessionName, iosSimulatorDevice);
+  session.appBundleId = 'com.session.app';
+  sessionStore.set(sessionName, session);
+
+  const response = await handleSnapshotCommands({
+    req: snapshotRequest(sessionName, 'settings', { positionals: ['text-size'] }),
+    sessionName,
+    logPath: '/tmp/daemon.log',
+    sessionStore,
+  });
+
+  expect(response?.ok).toBe(true);
+  expect(fixtureSettingsReads).toHaveLength(1);
 });

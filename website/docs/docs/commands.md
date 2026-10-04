@@ -760,6 +760,8 @@ agent-device settings permission grant photos limited
 agent-device settings permission reset notifications
 agent-device settings permission grant accessibility --platform macos
 agent-device settings permission reset screen-recording --platform macos
+agent-device settings permission grant camera --app com.example.app
+agent-device settings location on --app com.example.app
 ```
 
 - iOS `settings` support is simulator-only except for `settings appearance` and the macOS permission subset on macOS.
@@ -778,7 +780,7 @@ agent-device settings permission reset screen-recording --platform macos
 - Android `settings airplane on|off` is applied by the connectivity service (`cmd connectivity airplane-mode`, Android 11+), which drives the radios rather than only writing the `airplane_mode_on` setting. The response reports the `airplaneMode` that service holds after the change, and Android builds without that command fail without changing device state. Connectivity takes a moment to settle after the switch, so poll the app under test rather than asserting offline behavior immediately.
 - Fingerprint simulation is supported on Android targets where `cmd fingerprint` or `adb emu finger` is available.
   On physical Android devices, only `cmd fingerprint` is attempted.
-- Permission actions are scoped to the active session app.
+- Permission actions, iOS `settings location on|off`, and `clear-app-state` are app-scoped. They use the app bound to the session, or the one you name with `app` / `--app`, which needs no app to be open: `agent-device settings permission grant camera --app com.example.app`, or `client.settings.update({ setting: 'permission', state: 'grant', permission: 'camera', app: 'com.example.app' })`. Naming an app for a setting the target serves device-wide (every radio, display, and biometric setting, `location set`, Android's on/off `location`, and the macOS host's permissions) is refused rather than dropped, so a grant never silently lands on a different app.
 - iOS permission targets: `all`, `camera`, `microphone`, `photos` (`full` or `limited`), `contacts`, `contacts-limited`, `notifications`, `calendar`, `location`, `location-always`, `media-library`, `motion`, `reminders`, `siri`. `all` travels as one `simctl privacy … all` call.
 - On iOS, which of those services a runtime actually changes is `simctl privacy`'s own verdict, not its help text: Xcode 26 omits `camera` from the list while granting it. A service the runtime refuses fails with `UNSUPPORTED_OPERATION` naming the service; on current runtimes that is `notifications`, which a targeted change cannot reach and `all` leaves untouched.
 - Android permission targets: `all`, `calendar`, `camera`, `contacts`, `location`, `media-library`, `microphone`, `notifications`, `photos`. `contacts` fans out to `READ_CONTACTS`+`WRITE_CONTACTS`, `location` to `FINE`+`COARSE`, `calendar` to `READ`+`WRITE`; named multi-id targets intersect the package's declared permissions so a coarse-only or read-only app still succeeds, while a target declaring none of its ids fails loudly. `all` resolves against the package's declared permissions instead. Every response reports `permission` as the requested target and `permissions: string[]` as the ids actually mutated, in the order applied (`all` folds its applied ids into `permissions` the same way).

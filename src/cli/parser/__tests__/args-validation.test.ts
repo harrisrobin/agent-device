@@ -261,3 +261,45 @@ test('invalid range errors are deterministic', () => {
       error.message === 'Invalid depth: -1',
   );
 });
+
+// #3179: `settings` reads --app, but only for the actions that can consume it.
+test('parseArgs accepts --app for the settings actions that consume an app', () => {
+  const cases = [
+    ['settings', 'permission', 'grant', 'camera', '--app', 'com.example.app'],
+    ['settings', 'permission', 'deny', 'photos', '--app=com.example.app'],
+    ['settings', 'location', 'on', '--app', 'com.example.app'],
+    ['settings', 'clear-app-state', '--app', 'com.example.app'],
+  ];
+  for (const argv of cases) {
+    const parsed = parseArgs(argv, { strictFlags: true });
+    assert.equal(parsed.flags.targetApp, 'com.example.app');
+  }
+});
+
+test('parseArgs refuses --app for a settings action that reads none', () => {
+  const cases: Array<[string[], string]> = [
+    [['settings', 'wifi', 'on', '--app', 'com.example.app'], 'settings wifi does not read --app'],
+    [
+      ['settings', 'appearance', 'dark', '--app', 'com.example.app'],
+      'settings appearance does not read --app',
+    ],
+    [
+      ['settings', 'text-size', 'large', '--app', 'com.example.app'],
+      'settings text-size does not read --app',
+    ],
+    [
+      ['settings', 'reset-keychain', 'clear', '--app', 'com.example.app'],
+      'settings reset-keychain does not read --app',
+    ],
+  ];
+  for (const [argv, message] of cases) {
+    assert.throws(
+      () => parseArgs(argv, { strictFlags: true }),
+      (error: unknown) =>
+        error instanceof AppError &&
+        error.code === 'INVALID_ARGS' &&
+        error.message.startsWith(message),
+      `expected ${argv.join(' ')} to be refused`,
+    );
+  }
+});

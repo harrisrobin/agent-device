@@ -246,3 +246,82 @@ describe('settings CLI permission membership properties', () => {
     );
   });
 });
+
+// #3179: an app-scoped change can name its app instead of the session's, so no app has to be open.
+describe('settings CLI explicit app (#3179)', () => {
+  function appFlags(targetApp: string): CliFlags {
+    return { targetApp } as CliFlags;
+  }
+
+  test('carries --app on a permission change and rides it to the daemon as targetApp', () => {
+    const input = settingsCliReader(['permission', 'grant', 'camera'], appFlags('com.example.app'));
+    expect(input).toMatchObject({
+      setting: 'permission',
+      state: 'grant',
+      permission: 'camera',
+      app: 'com.example.app',
+    });
+    expect(settingsDaemonWriter(input)).toMatchObject({
+      command: 'settings',
+      positionals: ['permission', 'grant', 'camera'],
+      options: { targetApp: 'com.example.app' },
+    });
+  });
+
+  test('carries --app on iOS location on|off', () => {
+    for (const state of ['on', 'off']) {
+      expect(settingsCliReader(['location', state], appFlags('com.example.app'))).toMatchObject({
+        setting: 'location',
+        state,
+        app: 'com.example.app',
+      });
+    }
+  });
+
+  test('leaves app undefined when the caller named none', () => {
+    const input = settingsCliReader(['permission', 'grant', 'camera'], flags());
+    expect(input.app).toBeUndefined();
+    expect(settingsDaemonWriter(input).options.targetApp).toBeUndefined();
+  });
+
+  test('lets the clear-app-state positional win over --app and keep riding the positional', () => {
+    const input = settingsCliReader(
+      ['clear-app-state', 'com.from.positional'],
+      appFlags('com.from.flag'),
+    );
+    expect(input).toMatchObject({
+      setting: 'clear-app-state',
+      state: 'clear',
+      app: 'com.from.positional',
+    });
+    expect(settingsDaemonWriter(input)).toMatchObject({
+      positionals: ['clear-app-state', 'com.from.positional'],
+      options: { targetApp: 'com.from.positional' },
+    });
+  });
+
+  test('falls back to --app for clear-app-state when no positional names one', () => {
+    const input = settingsCliReader(['clear-app-state', 'clear'], appFlags('com.example.app'));
+    expect(input).toMatchObject({ app: 'com.example.app' });
+  });
+
+  test('carries the named app on a leg that cannot consume one, leaving refusal to the daemon', () => {
+    const input = settingsCliReader(
+      ['location', 'set', '37.77', '-122.42'],
+      appFlags('com.example.app'),
+    );
+    expect(input).toMatchObject({ setting: 'location', state: 'set', app: 'com.example.app' });
+    expect(settingsDaemonWriter(input).options.targetApp).toBe('com.example.app');
+  });
+
+  test('advertises --app in its synopsis and refuses it for a setting that reads none', () => {
+    const schema = settingsCommandFacet.cliSchema;
+    expect(schema.allowedFlags).toEqual(['targetApp']);
+    expect(schema.flagsByAction?.wifi).toEqual([]);
+    expect(schema.flagsByAction?.permission).toEqual(['targetApp']);
+  });
+
+  test('keeps the app-aware form in the command detail', () => {
+    expect(settingsCommandFacet.text.cliDetail).toContain('app/--app');
+  });
+});

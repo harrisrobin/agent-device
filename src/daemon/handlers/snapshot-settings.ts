@@ -13,6 +13,9 @@ import {
   invalidTextSizeMessage,
   readTextSizeCategory,
   SETTINGS_INVALID_ARGS_MESSAGE,
+  settingsAppNotConsumedRefusal,
+  settingsAppNotNamedRefusal,
+  settingsAppScope,
   type ReadableSetting,
   type SettingOptions,
 } from '@agent-device/contracts/settings';
@@ -152,7 +155,11 @@ function buildSettingOptions(parsed: ParsedSettingsArgs): SettingOptions | undef
   return undefined;
 }
 
-/** The `settings_apply` payload the retired dispatcher emitted, kept byte-for-byte. */
+/**
+ * The `settings_apply` payload the retired dispatcher emitted, plus the app a mutation resolved to
+ * on every leg that can consume one: an app-scoped change now has three possible sources, and the
+ * log line is where a grant that landed on the wrong bundle id gets diagnosed.
+ */
 function settingsDiagnosticData(
   parsed: ParsedSettingsArgs,
   appBundleId: string | undefined,
@@ -171,6 +178,7 @@ function settingsDiagnosticData(
       state,
       permissionTarget: parsed.permissionTarget,
       permissionMode: parsed.permissionMode,
+      appBundleId,
       platform,
     };
   }
@@ -220,6 +228,15 @@ async function executeSettingsRead(
   const { req, logPath, sessionStore, session, device, inspectFacts, bindDevice } = params;
   const refusal = settingsRequestRefusal(device, setting);
   if (refusal !== undefined) return refusal;
+  // The shared settings input advertises `app` for every leg, so a read can arrive naming one even
+  // though no readable setting consumes it. The read is device-wide, so an app is refused rather
+  // than dropped: the same invariant the write leg keeps. Only an app the CALLER named counts — the
+  // app the session happens to carry must not fail every read.
+  const namedApp = settingsFlagAppId(req);
+  if (namedApp !== undefined) {
+    const appRefusal = settingsNamedAppRefusal(device, setting, undefined, namedApp);
+    if (appRefusal !== undefined) return appRefusal;
+  }
   const admission = await admitRuntimeUse({
     command: `settings ${setting}`,
     device,
@@ -261,6 +278,8 @@ async function executeSettingsWrite(
   const { setting, state } = parsed;
   const refusal = settingsRequestRefusal(device, setting);
   if (refusal !== undefined) return refusal;
+  const target = settingsWriteTarget(req, device, parsed);
+  if (target.refusal !== undefined) return target.refusal;
   const admission = await admitRuntimeUse({
     command: 'settings',
     device,
@@ -269,7 +288,7 @@ async function executeSettingsWrite(
     bindDevice,
     readiness: !session,
   });
-  const appBundleId = settingsWriteAppId(req, parsed, session);
+  const appBundleId = settingsWriteAppId(req, target.explicitApp, session);
   if (admission.type === 'response') return admission.response;
   const writeRefusal = settingsWriteRefusal(parsed, appBundleId);
   if (writeRefusal !== undefined) return writeRefusal;
@@ -334,20 +353,74 @@ function settingsRequestRefusal(
   return undefined;
 }
 
+/** The app the CALLER named on `flags.targetApp`, before any session-owned app is considered. */
+function settingsFlagAppId(req: DaemonRequest): string | undefined {
+  return typeof req.flags?.targetApp === 'string' ? req.flags.targetApp : undefined;
+}
+
 /**
- * The app a mutation targets: the explicit positional wins, then the Maestro adapter's daemon-internal
- * `settingsAppBundleId`, which aims one request at another app than the session carries, and last the
- * app the session is bound to.
+ * The app the CALLER asked about, and whether this target can consume one. The `clear-app-state`
+ * positional wins over the `--app`/`app` the surface carries on `flags.targetApp`; nothing
+ * session-owned belongs here, because this is the answer to "did anyone name a specific app".
+ */
+function settingsWriteTarget(
+  req: DaemonRequest,
+  device: SessionState['device'],
+  parsed: ParsedSettingsArgs,
+): { explicitApp: string | undefined; refusal: DaemonResponse | undefined } {
+  const namedApp = parsed.appBundleId ?? settingsFlagAppId(req);
+  if (namedApp === undefined) return { explicitApp: undefined, refusal: undefined };
+  const refusal = settingsNamedAppRefusal(device, parsed.setting, parsed.state, namedApp);
+  if (refusal !== undefined) return { explicitApp: undefined, refusal };
+  return { explicitApp: namedApp.trim(), refusal: undefined };
+}
+
+/**
+ * The refusal for an app the CALLER named that this leg cannot use: one with no name in it (which
+ * would otherwise land the change on the session app while the caller believes they aimed it
+ * elsewhere), or one named on a leg the target serves device-wide — the macOS host's `permission`,
+ * Android's on/off `location`, `location set`, every radio and display setting, and every read.
+ * Dropping the second would read as "the grant landed on that app". The scope table keys on the
+ * target family alone, so this answers before a runtime is admitted and never boots a device.
+ */
+function settingsNamedAppRefusal(
+  device: SessionState['device'],
+  setting: string,
+  state: string | undefined,
+  namedApp: string,
+): DaemonResponse | undefined {
+  if (namedApp.trim().length === 0) {
+    return errorFrom(settingsAppNotNamedRefusal(namedApp));
+  }
+  if (settingsAppScope(device, setting, state) === 'app-scoped') return undefined;
+  return errorFrom(settingsAppNotConsumedRefusal(setting, state, namedApp.trim()));
+}
+
+function errorFrom(refusal: {
+  code: 'INVALID_ARGS';
+  message: string;
+  details: Record<string, unknown>;
+  hint: string;
+}): DaemonResponse {
+  return errorResponse(refusal.code, refusal.message, refusal.details, { hint: refusal.hint });
+}
+
+/**
+ * The app a mutation lands on: the app the caller named wins, then the Maestro adapter's
+ * daemon-internal `settingsAppBundleId`, which aims one request at another app than the session
+ * carries, and last the app the session is bound to.
  */
 function settingsWriteAppId(
   req: DaemonRequest,
-  parsed: ParsedSettingsArgs,
+  explicitApp: string | undefined,
   session: SessionState | undefined,
 ): string | undefined {
-  return parsed.appBundleId ?? req.internal?.settingsAppBundleId ?? session?.appBundleId;
+  return explicitApp ?? req.internal?.settingsAppBundleId ?? session?.appBundleId;
 }
 
-/** The refusal a mutation adds on top of the shared one: an app the session may not carry. */
+/**
+ * The refusal a mutation adds on top of the shared ones: an app the session may not carry.
+ */
 function settingsWriteRefusal(
   parsed: ParsedSettingsArgs,
   appBundleId: string | undefined,

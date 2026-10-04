@@ -48,6 +48,7 @@ function buildFlags(options: InternalRequestOptions): CommandFlags {
     sessionIsolation: options.sessionIsolation,
     platform: options.platform,
     target: options.target,
+    targetApp: options.targetApp,
     device: options.device,
     udid: options.udid,
     serial: options.serial,

@@ -69,6 +69,11 @@ export type InternalRequestOptions = AgentDeviceClientConfig &
   AgentDeviceSelectionOptions &
   CommandExecutionOptions & {
     runtime?: SessionRuntimeHints;
+    /**
+     * The installed app a command aims at without opening it: `doctor` verifies one, and `settings`
+     * applies an app-scoped change to one. `--app`/`--target-app`.
+     */
+    targetApp?: string;
     overlayRefs?: boolean;
     surface?: SessionSurface;
     activity?: string;

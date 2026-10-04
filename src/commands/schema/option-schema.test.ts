@@ -110,6 +110,18 @@ test('isFlagSupportedForCommand consults option schema support map', () => {
   assert.equal(isFlagSupportedForCommand('delayMs', 'press'), false);
 });
 
+// #3179: the app one invocation aims at must never be a persistent default, or it silently
+// retargets every later doctor check and permission grant.
+test('a per-invocation app target is writable per call only, never from env or config', () => {
+  const spec = getOptionSpec('targetApp');
+  assert.ok(spec);
+  assert.deepEqual(spec.env.names, []);
+  assert.equal(spec.configurable, false);
+  // A device-set path keeps its operator-config route; only the env default is excluded for it.
+  assert.deepEqual(getOptionSpec('iosSimulatorDeviceSet')?.env.names, []);
+  assert.equal(getOptionSpec('iosSimulatorDeviceSet')?.configurable, true);
+});
+
 test('option schema parses enum options from env/config sources', () => {
   const spec = getOptionSpec('appsFilter');
   assert.ok(spec);

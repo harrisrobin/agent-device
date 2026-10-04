@@ -264,6 +264,12 @@ export function appendGenericActionScriptArgs(parts: string[], action: SessionAc
   if (action.command === 'fold' && action.flags?.keyframes !== undefined) {
     parts.push('--keyframes', formatScriptArg(action.flags.keyframes));
   }
+  // A `settings` write aimed at an app other than the session's is only reproducible if the script
+  // says so: `simctl privacy` and `pm` take the id, and without it the replayed grant lands on the
+  // session app — or on nothing at all.
+  if (action.command === 'settings' && action.flags?.targetApp !== undefined) {
+    parts.push('--app', formatScriptArg(action.flags.targetApp));
+  }
   appendScriptSeriesFlags(parts, action);
 }
 

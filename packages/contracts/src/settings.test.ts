@@ -17,9 +17,14 @@ import {
   PERMISSION_ACTIONS,
   PERMISSION_MODES,
   readTextSizeCategory,
+  SETTINGS_APP_NOT_CONSUMED_REASON,
+  SETTINGS_APP_NOT_NAMED_REASON,
   SETTINGS_INVALID_ARGS_MESSAGE,
   SETTINGS_MACOS_PERMISSION_USAGE,
   SETTINGS_USAGE_OVERRIDE,
+  settingsAppNotConsumedRefusal,
+  settingsAppNotNamedRefusal,
+  settingsAppScope,
   TEXT_SIZE_CATEGORIES,
   textSizeSettingPayload,
   type AppearanceAction,
@@ -329,5 +334,96 @@ describe('appearance vocabulary types', () => {
     expectTypeOf<AppearanceAction>().toEqualTypeOf<
       Extract<SettingsUpdateOptions, { setting: 'appearance' }>['state']
     >();
+  });
+});
+
+describe('settings app scope (#3179)', () => {
+  const iosSimulator = { platform: 'apple' as const };
+  const android = { platform: 'android' as const };
+  const macHost = { platform: 'apple' as const, appleOs: 'macos' as const };
+
+  test.each([
+    ['permission', 'grant'],
+    ['permission', 'deny'],
+    ['permission', 'reset'],
+    ['location', 'on'],
+    ['location', 'off'],
+    ['clear-app-state', 'clear'],
+  ])('treats %s %s as app-scoped on a simulator', (setting, state) => {
+    expect(settingsAppScope(iosSimulator, setting, state)).toBe('app-scoped');
+  });
+
+  test.each([
+    ['location', 'on'],
+    ['location', 'off'],
+  ])('treats %s %s as device-level on Android', (setting, state) => {
+    expect(settingsAppScope(android, setting, state)).toBe('device-level');
+  });
+
+  test('treats Android permission as app-scoped', () => {
+    expect(settingsAppScope(android, 'permission', 'grant')).toBe('app-scoped');
+  });
+
+  test.each([
+    ['permission', 'grant'],
+    ['appearance', 'dark'],
+    ['location', 'on'],
+  ])('treats %s %s as device-level on the macOS host', (setting, state) => {
+    expect(settingsAppScope(macHost, setting, state)).toBe('device-level');
+  });
+
+  test.each([
+    ['location', 'set'],
+    ['wifi', 'on'],
+    ['airplane', 'off'],
+    ['animations', 'on'],
+    ['faceid', 'match'],
+    ['reset-keychain', 'clear'],
+    ['text-size', 'large'],
+    ['something-new', 'on'],
+  ])(
+    'treats %s %s as device-level everywhere: an unclaimed app is refused, never dropped',
+    (setting, state) => {
+      expect(settingsAppScope(iosSimulator, setting, state)).toBe('device-level');
+      expect(settingsAppScope(android, setting, state)).toBe('device-level');
+    },
+  );
+
+  test('normalizes case and padding on both the setting and the state', () => {
+    expect(settingsAppScope(iosSimulator, ' Permission ', ' GRANT ')).toBe('app-scoped');
+    expect(settingsAppScope(android, ' LOCATION ', 'Set')).toBe('device-level');
+  });
+});
+
+describe('settings app-not-consumed refusal (#3179)', () => {
+  test('names the app and the setting, and answers before dispatch', () => {
+    const refusal = settingsAppNotConsumedRefusal('location', 'on', 'com.example.app');
+    expect(refusal.code).toBe('INVALID_ARGS');
+    expect(refusal.message).toContain('com.example.app');
+    expect(refusal.message).toContain('location on');
+    expect(refusal.details).toMatchObject({
+      reason: SETTINGS_APP_NOT_CONSUMED_REASON,
+      dispatched: 'no',
+      setting: 'location on',
+      app: 'com.example.app',
+    });
+    expect(refusal.hint).toContain('settings permission grant location com.example.app');
+  });
+
+  test('a nameless app is refused with its own typed reason', () => {
+    const refusal = settingsAppNotNamedRefusal('   ');
+    expect(refusal.code).toBe('INVALID_ARGS');
+    expect(refusal.message).toContain('"   "');
+    expect(refusal.details).toMatchObject({
+      reason: SETTINGS_APP_NOT_NAMED_REASON,
+      dispatched: 'no',
+      app: '   ',
+    });
+  });
+
+  test('describes a setting with no state by its own name', () => {
+    expect(settingsAppNotConsumedRefusal('text-size', undefined, 'a.b').details.setting).toBe(
+      'text-size',
+    );
   });
 });

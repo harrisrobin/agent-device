@@ -85,9 +85,10 @@ export const TARGET_FLAG_DEFINITIONS: readonly FlagDefinition[] = [
     names: ['--app', '--target-app'],
     type: 'string',
     usageLabel: '--app <id-or-name>',
-    usageDescription: 'Doctor: verify an installed target app without opening a session',
+    usageDescription:
+      'Target an app by bundle id, package, or name without opening it: doctor verifies an installed app; settings applies an app-scoped change to it',
     projectConfig: false,
-    recorded: false,
+    recorded: true,
   },
   {
     key: 'metroHost',

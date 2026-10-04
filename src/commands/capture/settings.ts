@@ -12,14 +12,15 @@ import {
   type PermissionMode,
 } from '@agent-device/contracts/settings';
 import type { CommandSchemaOverride } from '@agent-device/command-registry/command-schema';
+import type { FlagKey } from '@agent-device/command-registry/flag-types';
 import type { CliFlags } from '@agent-device/contracts/command';
 import { AppError } from '@agent-device/kernel/errors';
 import { readLocationCoordinate } from '@agent-device/kernel/location-coordinates';
 import { enumField, numberField, requiredField, stringField } from '../command-input.ts';
 import {
-  direct,
   isOneOf,
   optionalString,
+  request,
   selectionOptionsFromFlags,
   setOf,
 } from '../cli-grammar/common.ts';
@@ -41,7 +42,9 @@ const settingsCommandMetadata = defineFieldCommandMetadata(
     // value the target holds. Every other setting still requires one, which the command's own parse
     // and the daemon enforce per setting rather than the shared field map.
     state: stringField(),
-    app: stringField(),
+    app: stringField(
+      'App bundle id or Android package the change applies to: permission grant|deny|reset, iOS location on|off, and clear-app-state. Defaults to the app bound to the session, so no app has to be open; naming one for a device-wide setting is refused.',
+    ),
     latitude: numberField(),
     longitude: numberField(),
     permission: stringField(),
@@ -49,24 +52,75 @@ const settingsCommandMetadata = defineFieldCommandMetadata(
   },
 );
 
+/**
+ * Which `settings` action reads which option.
+ *
+ * `app` is the only action-scoped option this command has, and the row list is what makes the
+ * refusal real: `settings wifi on --app com.example.app` would otherwise look like an app-scoped
+ * Wi-Fi toggle and then have the name silently dropped by the daemon. Every other setting reads no
+ * option, so its row is empty; `clear-app-state` reads `app` through its positional.
+ *
+ * The table keys on the action alone, so `location` admits `--app` for both `on|off` (an Apple
+ * grant) and `set` (which moves the device). Only the target decides that one, so the daemon's
+ * scope table is the backstop and the reader carries the app to it instead of guessing per branch.
+ */
+const SETTINGS_FLAGS_BY_ACTION: Readonly<Record<string, readonly FlagKey[]>> = {
+  permission: ['targetApp'],
+  location: ['targetApp'],
+  'clear-app-state': ['targetApp'],
+  wifi: [],
+  airplane: [],
+  animations: [],
+  appearance: [],
+  'text-size': [],
+  faceid: [],
+  touchid: [],
+  fingerprint: [],
+  'reset-keychain': [],
+};
+
+const SETTINGS_CLI_FLAGS: readonly FlagKey[] = [
+  ...new Set(Object.values(SETTINGS_FLAGS_BY_ACTION).flat()),
+];
+
 const settingsCliSchema = {
   usageOverride: SETTINGS_USAGE_OVERRIDE,
   listUsageOverride: 'settings [area] [options]',
   positionalArgs: ['setting', 'state?', 'target?', 'mode?'],
+  allowedFlags: SETTINGS_CLI_FLAGS,
+  flagsByAction: SETTINGS_FLAGS_BY_ACTION,
+  flagDescriptionOverrides: {
+    targetApp:
+      'Apply an app-scoped change to this bundle id or package without opening it: permission grant|deny|reset, iOS location on|off, clear-app-state. Refused for a setting the target serves device-wide.',
+  },
 } as const satisfies CommandSchemaOverride;
 
 export const settingsCliReader: CliReader = (positionals, flags) =>
   readSettingsOptionsFromPositionals(positionals, flags);
 
-export const settingsDaemonWriter: DaemonWriter = direct(PUBLIC_COMMANDS.settings, (input) =>
-  settingsPositionals(input as SettingsUpdateOptions),
-);
+/**
+ * The `app` the caller named rides `options.targetApp` to the daemon rather than being restated as a
+ * settings-specific wire key: it is the same "aim this at an app I am not opening" the doctor already
+ * carries, and `buildFlags` projects that one key onto the request. `--app` arrives on the same key
+ * from the CLI reader, so both surfaces converge here. It is copied for every setting, including the
+ * ones that cannot consume one, so the daemon is the single place that decides — and refuses —
+ * rather than a writer that would have to duplicate the per-target table.
+ */
+export const settingsDaemonWriter: DaemonWriter = (input) => {
+  const app = input.app;
+  return request(
+    PUBLIC_COMMANDS.settings,
+    settingsPositionals(input as SettingsUpdateOptions),
+    app === undefined ? input : { ...input, targetApp: app },
+    input,
+  );
+};
 
 export const settingsCommandFacet = defineCommandFacet({
   name: SETTINGS_COMMAND_NAME,
   text: {
     summary: 'Change OS settings and app permissions',
-    cliDetail: `macOS supports only settings appearance <light|dark|toggle> and settings ${SETTINGS_MACOS_PERMISSION_USAGE}; wifi|airplane|location|animations|text-size remain unsupported on macOS. Mobile permission actions use the active session app. On Android, deny|reset of a permission the app currently holds kills a running app; the response reports priorGrantState (granted|not_granted|unknown) and warns for granted and unknown, with open <app> --relaunch to restore it. Permission changes require a resolvable foreground user and fail without mutating if adb cannot report one. Android settings airplane on|off is applied by the connectivity service (Android 11+) and reports the airplaneMode that service holds; older builds fail without changing device state. settings reset-keychain clear is iOS-simulator-only and resets the whole simulator keychain, not just the selected app: simctl exposes no per-app keychain reset, so every app on that simulator loses its keychain-backed credentials (e.g. Firebase auth). clear-app-state does not touch the keychain, so a full fresh-install reset needs both; relaunch the app afterward to observe the signed-out state. settings text-size reads the preferred text size the target holds and settings text-size <category> applies one, on iPhone and iPad simulators (simctl content size) and on Android targets (system font_scale); tvOS and visionOS simulators, physical Apple devices, and the macOS host refuse it. Android has no category ladder of its own, so the read names the nearest rung and reports the exact multiplier as platformValue; an already-running app adopts a changed size at its next configuration change, so relaunch the app under test to observe it.`,
+    cliDetail: `macOS supports only settings appearance <light|dark|toggle> and settings ${SETTINGS_MACOS_PERMISSION_USAGE}; wifi|airplane|location|animations|text-size remain unsupported on macOS. Mobile permission actions, iOS location on|off, and clear-app-state name the app they change with app/--app, defaulting to the session app so no app has to be open; naming one for a device-wide setting is refused rather than dropped. On Android, deny|reset of a permission the app currently holds kills a running app; the response reports priorGrantState (granted|not_granted|unknown) and warns for granted and unknown, with open <app> --relaunch to restore it. Permission changes require a resolvable foreground user and fail without mutating if adb cannot report one. Android settings airplane on|off is applied by the connectivity service (Android 11+) and reports the airplaneMode that service holds; older builds fail without changing device state. settings reset-keychain clear is iOS-simulator-only and resets the whole simulator keychain, not just the selected app: simctl exposes no per-app keychain reset, so every app on that simulator loses its keychain-backed credentials (e.g. Firebase auth). clear-app-state does not touch the keychain, so a full fresh-install reset needs both; relaunch the app afterward to observe the signed-out state. settings text-size reads the preferred text size the target holds and settings text-size <category> applies one, on iPhone and iPad simulators (simctl content size) and on Android targets (system font_scale); tvOS and visionOS simulators, physical Apple devices, and the macOS host refuse it. Android has no category ladder of its own, so the read names the nearest rung and reports the exact multiplier as platformValue; an already-running app adopts a changed size at its next configuration change, so relaunch the app under test to observe it.`,
   },
   metadata: settingsCommandMetadata,
   run: (client, input) => client.settings.update(input as SettingsUpdateOptions),
@@ -82,7 +136,10 @@ function readSettingsOptionsFromPositionals(
   positionals: string[],
   flags: CliFlags,
 ): SettingsUpdateOptions {
-  const base = selectionOptionsFromFlags(flags);
+  // `--app` rides every leg, not only the ones the parser let it through on: the reader is a
+  // projection and the daemon's scope table is the one decision, so a named app reaches that table
+  // instead of being dropped here depending on which branch the grammar happened to take.
+  const base = { ...selectionOptionsFromFlags(flags), app: flags.targetApp };
   const setting = positionals[0];
   const state = positionals[1];
   if (isOneOf(setting, ON_OFF_SETTINGS) && isOneOf(state, ON_OFF_STATES)) {
@@ -124,8 +181,9 @@ function readSettingsOptionsFromPositionals(
     };
   }
   if (setting === 'clear-app-state') {
-    const app = state === 'clear' ? positionals[2] : state;
-    return { ...base, setting, state: 'clear', app };
+    // The positional this setting has always taken wins over the flag both spellings share.
+    const positionalApp = state === 'clear' ? positionals[2] : state;
+    return { ...base, setting, state: 'clear', app: positionalApp ?? flags.targetApp };
   }
   if (setting === 'reset-keychain' && state === 'clear' && positionals.length === 2) {
     return { ...base, setting, state };

@@ -1,3 +1,4 @@
+import { isApplePlatform, isMacOs, type DeviceInfo } from '@agent-device/kernel/device';
 import { AppError } from '@agent-device/kernel/errors';
 
 /**
@@ -150,6 +151,107 @@ export type SettingOptions = {
   latitude?: number;
   longitude?: number;
 };
+
+/**
+ * Whether naming an app for one mutation can mean anything on one target.
+ *
+ * `app-scoped` is the shape the public `app` field exists for: the change lands on that bundle id
+ * or package (`simctl privacy`, Android's `pm`). `device-level` is a mutation the same command
+ * serves for the whole device — the radio and display settings, the biometric simulators, the
+ * keychain, Android's on/off `location` (which writes the global `location_mode`), `location set`
+ * (which moves the device itself), and the macOS host's permissions, which are TCC grants to the
+ * host process. A named app would be dropped there, so it is refused instead.
+ *
+ * Anything this table does not name answers `device-level`, which is the direction that fails
+ * loudly: a setting that later learns to consume an app has to claim the row, and until then a
+ * caller is told their app named nothing rather than being told the grant landed on it.
+ */
+export type SettingsAppScope = 'app-scoped' | 'device-level';
+
+/**
+ * The one table deciding whether an app named on a `settings` request is consumed. It is keyed on
+ * the target family rather than the resolved device so the daemon can answer before binding a
+ * runtime, and it stays honest by settling only the combinations whose owner behavior is already
+ * fixed elsewhere: `clear-app-state` is app-scoped wherever it is served, `permission` is app-scoped
+ * on every mobile target and host-level on macOS, and on/off `location` is app-scoped only on Apple
+ * simulators, where it maps to a privacy grant.
+ */
+export function settingsAppScope(
+  device: Pick<DeviceInfo, 'platform' | 'appleOs'>,
+  setting: string,
+  state: string | undefined,
+): SettingsAppScope {
+  const normalizedSetting = setting.trim().toLowerCase();
+  if (normalizedSetting === 'clear-app-state') return 'app-scoped';
+  if (normalizedSetting === 'permission') {
+    return isMacOs(device) ? 'device-level' : 'app-scoped';
+  }
+  if (normalizedSetting === 'location') {
+    if (state?.trim().toLowerCase() === 'set') return 'device-level';
+    return isApplePlatform(device.platform) && !isMacOs(device) ? 'app-scoped' : 'device-level';
+  }
+  return 'device-level';
+}
+
+/**
+ * The reason a request is told its app names nothing: what a caller does about it — drop the app or
+ * move to a target whose mutation is app-scoped — is the reason's meaning, so a driver can branch
+ * on `error.details.reason` instead of the prose. Paired with `dispatched: no`, because the
+ * refusal runs before a device is touched.
+ */
+export const SETTINGS_APP_NOT_CONSUMED_REASON = 'setting_app_not_consumed';
+
+/**
+ * The reason a request is told its app argument carries no name at all. An empty or whitespace app
+ * cannot reach any bundle, and dropping it would land the change on the session app while the
+ * caller believes they aimed it elsewhere — the same silent-drop the scope refusal exists to stop.
+ */
+export const SETTINGS_APP_NOT_NAMED_REASON = 'setting_app_not_named';
+
+/** The refusal for an `app` that arrived with nothing in it. */
+export function settingsAppNotNamedRefusal(app: string): {
+  code: 'INVALID_ARGS';
+  message: string;
+  details: Record<string, unknown>;
+  hint: string;
+} {
+  return {
+    code: 'INVALID_ARGS',
+    message: `settings was given an app with no name in it: "${app}" is not a bundle id or package.`,
+    details: { reason: SETTINGS_APP_NOT_NAMED_REASON, dispatched: 'no', app },
+    hint: 'Name a bundle id or package, or drop the app to use the app bound to the session.',
+  };
+}
+
+/**
+ * The refusal a mutation answers with when its target consumes no app: the code, sentence, typed
+ * details, and hint as data, so the daemon can answer with it through its own response builder
+ * rather than by unwrapping an error the CLI would then re-normalize. The `app` that named nothing
+ * stays in `details` — the caller asked about that bundle id and the answer should quote it back.
+ */
+export function settingsAppNotConsumedRefusal(
+  setting: string,
+  state: string | undefined,
+  app: string,
+): {
+  code: 'INVALID_ARGS';
+  message: string;
+  details: Record<string, unknown>;
+  hint: string;
+} {
+  const described = state === undefined ? setting : `${setting} ${state}`;
+  return {
+    code: 'INVALID_ARGS',
+    message: `settings ${described} changes the device, not an app: ${app} names nothing it can grant or revoke.`,
+    details: {
+      reason: SETTINGS_APP_NOT_CONSUMED_REASON,
+      dispatched: 'no',
+      setting: described,
+      app,
+    },
+    hint: `Drop the app and run \`settings ${described}\`, or aim it at an app-scoped setting such as \`settings permission grant location ${app}\`.`,
+  };
+}
 
 const SETTINGS_WIFI_USAGE = '<wifi|airplane|location> <on|off>';
 const SETTINGS_LOCATION_SET_USAGE = 'location set <lat> <lon>';
