@@ -107,7 +107,7 @@ export type RequestRouterDeps = {
   hostDiagnostics?: HostDiagnostics;
   providerRuntimeIds?: readonly string[];
   providerRuntimeRequiredIds?: readonly string[];
-  providerCredentials?: DaemonProviderCredentials;
+  providerCredentials: DaemonProviderCredentials;
   leaseLifecycleProvider?: LeaseLifecycleProvider;
   cloudArtifactProvider?: CloudArtifactProvider;
   providerAppCatalog?: ProviderAppCatalog;

@@ -15,11 +15,13 @@ const PROVIDER_CREDENTIAL_VARIABLES: Readonly<Record<string, readonly string[]>>
 
 /**
  * A versioned, non-reversible digest of the credential variables a provider reads from `env`, or
- * undefined for a provider whose credentials do not come from the environment.
+ * undefined when `env` sets none of them or the provider's credentials do not come from the
+ * environment. A caller without credentials cannot hold credentials that compete with the daemon's.
  */
 export function providerCredentialFingerprint(provider: string, env: EnvMap): string | undefined {
   const names = PROVIDER_CREDENTIAL_VARIABLES[provider];
-  return names ? digestVariables(names, env) : undefined;
+  const pairs = names ? readCredentialPairs(names, env) : [];
+  return pairs.length > 0 ? digestPairs(pairs) : undefined;
 }
 
 /** The provider credentials a daemon started with, and the state dir that names that daemon. */
@@ -35,17 +37,23 @@ export function readDaemonProviderCredentials(
   const fingerprints = Object.fromEntries(
     Object.entries(PROVIDER_CREDENTIAL_VARIABLES).map(([provider, names]) => [
       provider,
-      digestVariables(names, env),
+      digestPairs(readCredentialPairs(names, env)),
     ]),
   );
   return { fingerprints, stateDir };
 }
 
-function digestVariables(names: readonly string[], env: EnvMap): string {
-  const pairs = names
+function readCredentialPairs(
+  names: readonly string[],
+  env: EnvMap,
+): ReadonlyArray<readonly [string, string]> {
+  return names
     .map((name) => [name, env[name]?.trim()] as const)
     .filter((pair): pair is readonly [string, string] => Boolean(pair[1]))
     .sort(([left], [right]) => left.localeCompare(right));
+}
+
+function digestPairs(pairs: ReadonlyArray<readonly [string, string]>): string {
   const digest = crypto.createHash('sha256').update(JSON.stringify(pairs)).digest('hex');
   return `v1:${digest.slice(0, 16)}`;
 }

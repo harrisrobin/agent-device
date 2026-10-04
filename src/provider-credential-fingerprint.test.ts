@@ -34,10 +34,19 @@ test('a fingerprint ignores variables the provider does not read and blank value
       BROWSERSTACK_WEBDRIVER_ENDPOINT: 'https://hub.example',
     }),
   ).toBe(fingerprint);
-  expect(providerCredentialFingerprint('limrun', { LIMRUN_REGION: ' ' })).toBe(
-    providerCredentialFingerprint('limrun', {}),
-  );
 });
+
+test.for(['limrun', 'browserstack'])(
+  'a caller with no %s credentials sends no fingerprint, while a daemon without them records one',
+  (provider) => {
+    expect(providerCredentialFingerprint(provider, {})).toBe(undefined);
+    expect(providerCredentialFingerprint(provider, { LIMRUN_REGION: ' ' })).toBe(undefined);
+    const credentialed = { ...BROWSERSTACK_ENV, LIMRUN_API_KEY: 'lim-key' };
+    const empty = readDaemonProviderCredentials({}, '/state').fingerprints[provider];
+    expect(empty).toMatch(/^v1:[0-9a-f]{16}$/);
+    expect(providerCredentialFingerprint(provider, credentialed)).not.toBe(empty);
+  },
+);
 
 test('AWS Device Farm has no environment fingerprint', () => {
   expect(providerCredentialFingerprint('aws-device-farm', { AWS_ACCESS_KEY_ID: 'id' })).toBe(

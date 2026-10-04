@@ -279,11 +279,22 @@ test.for([
   },
 );
 
-test('a request without a fingerprint is not checked', async () => {
-  const outcome = await allocateWithDaemonEnv(providerAllocateRequest('limrun', undefined), {
-    LIMRUN_API_KEY: 'lim-key',
-  });
+test('a daemon holding credentials allocates for a shell with none', async () => {
+  const outcome = await allocateWithDaemonEnv(
+    providerAllocateRequest('limrun', providerCredentialFingerprint('limrun', {})),
+    { LIMRUN_API_KEY: 'lim-key' },
+  );
 
   assert.equal(outcome.error, undefined);
   assert.equal(outcome.allocations, 1);
+});
+
+test('a daemon started without credentials refuses a shell that has them', async () => {
+  const outcome = await allocateWithDaemonEnv(
+    providerAllocateRequest('limrun', providerCredentialFingerprint('limrun', LIMRUN_ATTACH_ENV)),
+    {},
+  );
+
+  assert.equal(outcome.allocations, 0);
+  assert.equal(outcome.error?.details?.reason, 'provider-credentials-changed');
 });
