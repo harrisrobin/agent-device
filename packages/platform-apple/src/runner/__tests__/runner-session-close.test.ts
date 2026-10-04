@@ -107,7 +107,8 @@ import {
   readRunnerSessionLiveness,
   releaseIosRunnerOnClose,
 } from '../runner-session.ts';
-import { registerRunnerPrepProcess, runnerPrepProcessChildren } from '../runner-xctestrun.ts';
+import { registerRunnerPrepProcess } from '../runner-artifact.ts';
+import { runnerPrepProcessChildren } from '../runner-xctestrun.ts';
 
 // Test-only stand-in for the daemon's runtime lease-owner-state-dir setter (root-only; the package
 // cannot import it). Backs the host.leaseOwnerStateDir() getter the package reads instead.

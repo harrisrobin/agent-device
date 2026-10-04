@@ -10,7 +10,8 @@ import {
 import { IOS_SIMULATOR } from './device-fixtures.ts';
 import { appleRunnerTestHost } from '../test-host.ts';
 import { raceRunnerStartAgainstCaller } from '../runner-start-budget.ts';
-import { registerRunnerPrepProcess, runnerPrepProcessChildren } from '../runner-xctestrun.ts';
+import { registerRunnerPrepProcess } from '../runner-artifact.ts';
+import { runnerPrepProcessChildren } from '../runner-xctestrun.ts';
 
 const mockSignalPidsBestEffort = vi.fn();
 const mockSignalProcessGroupBestEffort = vi.fn();

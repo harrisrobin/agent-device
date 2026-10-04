@@ -3,7 +3,6 @@ export {
   forgetRunnerPrepProcess,
   hasCachedAppleRunnerArtifact,
   prepareXctestrunWithEnv,
-  registerRunnerPrepProcess,
   runnerPrepProcessChildren,
   runnerPrepProcessChildrenWithoutActiveOwner,
   type ExternalXctestRunnerOptions,
