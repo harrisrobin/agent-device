@@ -5,7 +5,7 @@ import {
 } from '@agent-device/kernel/errors';
 import { emitDiagnostic } from './host.ts';
 import { isCallerDeadlineAbortReason, resolveRunnerStartupSignal } from './runner-contract.ts';
-import { stopRunnerPrepProcesses } from './runner-disposal.ts';
+import { stopRunnerPrepProcessesWithoutActiveOwner } from './runner-disposal.ts';
 import { createRunnerPhaseBudget, type RunnerPhaseBudget } from './runner-xctestrun.ts';
 import { normalizeRunnerStartupTimeoutMs, type RunnerSession } from './runner-session-types.ts';
 import type { AppleRunnerLifecycleOptions } from './runner-provider.ts';
@@ -97,9 +97,10 @@ function runnerStartBudgetExhaustedError(timeoutMs: number, explicit: boolean): 
  * start another request spawned has no path to it otherwise. On cancel the waiter stops the
  * device's prep subprocesses through the same tree-kill path a session stop uses, so a timed-out
  * `open` cannot orphan a `build-for-testing` on the shared runner derived-data root where a
- * retried `open` would race it. The start itself keeps running under the lock (bounded by its own
- * budget); only the build this waiter was waiting on is stopped, and the start's next step fails
- * and logs.
+ * retried `open` would race it. Only builds whose owning start is detached are stopped: a build
+ * still owned by an in-flight request belongs to its owner and dies through the owner's own
+ * signal, never under a canceled waiter. The start itself keeps running under the lock (bounded
+ * by its own budget); its build is left running only while its owner is still there to cancel it.
  */
 export async function raceRunnerStartAgainstCaller(
   start: Promise<RunnerSession>,
@@ -111,7 +112,7 @@ export async function raceRunnerStartAgainstCaller(
     const abort = () => {
       reject(createRequestCanceledError(undefined, signal.reason));
       if (!isCallerDeadlineAbortReason(signal.reason)) {
-        void stopRunnerPrepProcesses(deviceId);
+        void stopRunnerPrepProcessesWithoutActiveOwner(deviceId);
       }
       start.catch(emitDetachedRunnerStartFailed);
     };

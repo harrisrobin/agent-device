@@ -677,6 +677,11 @@ export async function stopIosRunnerSession(deviceId: string): Promise<void> {
  * occupancy fact lives on the session, and awaited so `close` returns only once the lease is gone.
  * A close that stops the device stops its in-flight runner build too (#3177): the build is the
  * resource a session teardown promises to leave behind, not an orphan for the next `open` to race.
+ * The build is stopped FIRST, before waiting on the session lock: a start holds that lock for its
+ * whole cold build, so stopping the session first would only reach the build after it finished —
+ * exactly the orphan close promises to prevent. Unlike a canceled waiter (which may stop only
+ * detached builds), close is an explicit device teardown with the same device-wide authority as
+ * the session stop it performs, so it sweeps every build on the device.
  */
 export async function releaseIosRunnerOnClose(
   deviceId: string,
@@ -694,8 +699,8 @@ export async function releaseIosRunnerOnClose(
       data: { deviceId },
     });
   }
-  await stopIosRunnerSession(deviceId);
   await stopRunnerPrepProcesses(deviceId);
+  await stopIosRunnerSession(deviceId);
 }
 
 export async function abortAllIosRunnerSessions(): Promise<void> {

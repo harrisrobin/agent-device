@@ -5,6 +5,7 @@ export {
   prepareXctestrunWithEnv,
   registerRunnerPrepProcess,
   runnerPrepProcessChildren,
+  runnerPrepProcessChildrenWithoutActiveOwner,
   type ExternalXctestRunnerOptions,
   type RunnerXctestrunArtifact,
   type RunnerXctestrunArtifactState,

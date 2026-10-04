@@ -15,14 +15,17 @@ import { registerRunnerPrepProcess, runnerPrepProcessChildren } from '../runner-
 const mockSignalPidsBestEffort = vi.fn();
 const mockSignalProcessGroupBestEffort = vi.fn();
 const mockRunAppleToolCommand = vi.fn();
+const mockGetRequestSignal = vi.fn();
 
 beforeEach(() => {
   vi.resetAllMocks();
   mockRunAppleToolCommand.mockResolvedValue({ exitCode: 0, stdout: '', stderr: '' });
+  mockGetRequestSignal.mockReturnValue(undefined);
   appleRunnerTestHost.update({
     signalPidsBestEffort: mockSignalPidsBestEffort,
     signalProcessGroupBestEffort: mockSignalProcessGroupBestEffort,
     runAppleToolCommand: mockRunAppleToolCommand,
+    getRequestSignal: mockGetRequestSignal,
   });
 });
 
@@ -32,8 +35,7 @@ function callerDeadline(): DOMException {
 
 /** A detached start nobody has finished — the shape of a cold build still under the lock. */
 function hangingStart(): Promise<never> {
-  const promise = new Promise<never>(() => {});
-  return promise;
+  return new Promise<never>(() => {});
 }
 
 function makePrepChild(pid: number): ExecBackgroundResult['child'] {
@@ -58,16 +60,20 @@ async function settleAsyncWork(): Promise<void> {
 }
 
 /**
- * The waiter's cancel owns the build it waited on (#3177). A request canceled while queued
- * behind a detached cold build must stop that build: its spawn carried only the STARTING
- * request's cancellation signal, so without the waiter's device-scoped prep kill the build
- * would keep compiling under the daemon on the shared runner derived-data root, and a retried
- * `open` would race it. The kill is the same tree-kill escalation a session stop uses.
+ * The waiter's cancel owns the build it waited on (#3177). A request canceled while queued behind
+ * a detached cold build must stop that build: its spawn carried only the STARTING request's
+ * cancellation signal, so without the waiter's device-scoped prep kill the build would keep
+ * compiling under the daemon on the shared runner derived-data root, and a retried `open` would
+ * race it. The kill is the same tree-kill escalation a session stop uses. Here the build's owner
+ * has no live request signal (its start is detached), so the waiter is allowed to stop it.
  */
 test('a request canceled while waiting on the detached start stops that device build', async () => {
   const device = { ...IOS_SIMULATOR, id: 'runner-waiter-cancel-sim' };
   const build = makePrepChild(4848);
-  registerRunnerPrepProcess(device.id, build);
+  registerRunnerPrepProcess(device.id, build, 'owner-request-gone');
+  mockGetRequestSignal.mockImplementation((requestId?: string) =>
+    requestId === 'owner-request-gone' ? AbortSignal.abort() : undefined,
+  );
 
   const controller = new AbortController();
   controller.abort(createRequestCanceledError());
@@ -85,6 +91,40 @@ test('a request canceled while waiting on the detached start stops that device b
     runnerPrepProcessChildren(device.id).length,
     0,
     'the killed build left the prep ledger',
+  );
+});
+
+/**
+ * A canceled waiter must not reach a build still owned by an in-flight request (#3177 review).
+ * The owner cancels its own build through its live request signal at the exec layer; a waiter
+ * tearing it down would SIGTERM another active request's work out from under it. Here the build's
+ * owner still has a registered, un-aborted signal, so the canceled waiter leaves it running.
+ */
+test('a canceled waiter leaves a build owned by a still-active request', async () => {
+  const device = { ...IOS_SIMULATOR, id: 'runner-waiter-owner-active-sim' };
+  const build = makePrepChild(4850);
+  registerRunnerPrepProcess(device.id, build, 'owner-request-live');
+  mockGetRequestSignal.mockImplementation((requestId?: string) =>
+    requestId === 'owner-request-live' ? new AbortController().signal : undefined,
+  );
+
+  const controller = new AbortController();
+  controller.abort(createRequestCanceledError());
+  await assert.rejects(
+    raceRunnerStartAgainstCaller(hangingStart(), controller.signal, device.id),
+    canceled,
+  );
+  await settleAsyncWork();
+
+  assert.equal(
+    mockSignalProcessGroupBestEffort.mock.calls.length,
+    0,
+    'a canceled waiter never signals a build another active request owns',
+  );
+  assert.deepEqual(
+    runnerPrepProcessChildren(device.id).map((child) => child.pid),
+    [4850],
+    'the owned build stayed registered',
   );
 });
 

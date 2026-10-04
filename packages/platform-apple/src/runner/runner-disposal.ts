@@ -29,6 +29,7 @@ import {
   forgetRunnerPrepProcess,
   IOS_RUNNER_CONTAINER_BUNDLE_IDS,
   runnerPrepProcessChildren,
+  runnerPrepProcessChildrenWithoutActiveOwner,
 } from './runner-xctestrun.ts';
 import { advanceRunnerSessionState, type RunnerSession } from './runner-session-types.ts';
 
@@ -118,7 +119,22 @@ export async function abortRunnerSessionsAndPrepProcesses(
  * that stops device A's session must not sweep device B's in-flight build (#3177).
  */
 export async function stopRunnerPrepProcesses(deviceId?: string): Promise<void> {
-  const prepProcesses = runnerPrepProcessChildren(deviceId);
+  await stopPrepProcessList(runnerPrepProcessChildren(deviceId));
+}
+
+/**
+ * Stops the device builds no active request owns anymore (#3177). A canceled waiter may stop the
+ * build it waited on only once that build's owning start is detached; a build still owned by an
+ * in-flight request belongs to its owner, which cancels it through its own signal, and a waiter
+ * must not SIGTERM another request's work out from under it.
+ */
+export async function stopRunnerPrepProcessesWithoutActiveOwner(deviceId?: string): Promise<void> {
+  await stopPrepProcessList(runnerPrepProcessChildrenWithoutActiveOwner(deviceId));
+}
+
+async function stopPrepProcessList(
+  prepProcesses: readonly ExecBackgroundResult['child'][],
+): Promise<void> {
   await Promise.allSettled(
     prepProcesses.map(async (child) => {
       try {
