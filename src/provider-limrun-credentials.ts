@@ -27,6 +27,15 @@ export const LIMRUN_CREDENTIAL_VARIABLES: readonly string[] = [
   ...INSTANCE_VARS.android,
 ];
 
+/** Each credential variable's value, read by the same rule the credential reader uses. */
+export function readLimrunCredentialValues(
+  env: EnvMap,
+): Readonly<Record<string, string | undefined>> {
+  return Object.fromEntries(
+    LIMRUN_CREDENTIAL_VARIABLES.map((name) => [name, readValue(env, name)]),
+  );
+}
+
 /** The variables that give access to an existing instance of a platform. */
 export function limrunInstanceVariables(platform: 'ios' | 'android'): readonly string[] {
   return INSTANCE_VARS[platform];
@@ -37,8 +46,8 @@ export function limrunInstanceVariables(platform: 'ios' | 'android'): readonly s
  * names, so an orchestrator hands a sandbox one set of variables for both tools.
  */
 export function readLimrunCredentials(env: EnvMap): LimrunCredentials | undefined {
-  const apiKey = env[ACCOUNT_VARS.apiKey]?.trim() || undefined;
-  const region = env[ACCOUNT_VARS.region]?.trim() || undefined;
+  const apiKey = readValue(env, ACCOUNT_VARS.apiKey);
+  const region = readValue(env, ACCOUNT_VARS.region);
   const keepAlive = ['1', 'true'].includes(env.LIMRUN_KEEP_ALIVE?.trim().toLowerCase() ?? '');
   const ios = readInstanceVars(env, INSTANCE_VARS.ios);
   const android = readInstanceVars(env, INSTANCE_VARS.android);
@@ -58,7 +67,7 @@ function readInstanceVars<Name extends string>(
   env: EnvMap,
   names: readonly Name[],
 ): Readonly<Record<Name, string>> | undefined {
-  const entries = names.map((name) => [name, env[name]?.trim() || undefined] as const);
+  const entries = names.map((name) => [name, readValue(env, name)] as const);
   if (entries.every(([, value]) => value === undefined)) return undefined;
   const missing = entries.filter(([, value]) => value === undefined).map(([name]) => name);
   if (missing.length > 0) {
@@ -67,4 +76,8 @@ function readInstanceVars<Name extends string>(
     });
   }
   return Object.fromEntries(entries) as Record<Name, string>;
+}
+
+function readValue(env: EnvMap, name: string): string | undefined {
+  return env[name]?.trim() || undefined;
 }

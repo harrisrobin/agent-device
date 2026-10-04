@@ -23,8 +23,9 @@ import {
   rejectBrowserStackOnlyDeviceFeatures,
 } from './browserstack-device-features.ts';
 import {
+  BROWSERSTACK_CREDENTIAL_VARIABLES,
   CLOUD_WEBDRIVER_PROVIDERS,
-  requireBrowserStackCredentials,
+  readBrowserStackCredentials,
   type CloudWebDriverKnownProviderName,
 } from './providers.ts';
 import { readAwsDeviceFarmRegionFromArn } from './connection-verification.ts';
@@ -300,4 +301,16 @@ function readAwsInteractionMode(
 
 function dasherize(value: string): string {
   return value.replaceAll(/[A-Z]/g, (match) => `-${match.toLowerCase()}`);
+}
+
+export function requireBrowserStackCredentials(
+  env: Readonly<Record<string, string | undefined>>,
+  consumer: string,
+): { username: string; accessKey: string } {
+  const { username, accessKey } = readBrowserStackCredentials(env);
+  if (username && accessKey) return { username, accessKey };
+  const missing = username
+    ? BROWSERSTACK_CREDENTIAL_VARIABLES.accessKey
+    : BROWSERSTACK_CREDENTIAL_VARIABLES.username;
+  throw new AppError('INVALID_ARGS', `${consumer} requires ${missing} in the environment.`);
 }

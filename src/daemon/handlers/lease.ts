@@ -283,15 +283,18 @@ function assertProviderCredentialsUnchanged(
   requested: string | undefined,
   daemon: DaemonProviderCredentials | undefined,
 ): void {
-  const current = provider ? daemon?.fingerprints[provider] : undefined;
-  if (!daemon || !requested || !current || requested === current) return;
+  if (!daemon || !provider || !requested) return;
+  const current = daemon.fingerprints[provider];
+  if (requested === current) return;
   throw new AppError(
     'INVALID_ARGS',
-    `The running daemon holds different ${provider} credentials than this shell.`,
+    current
+      ? `The running daemon holds different ${provider} credentials than this shell.`
+      : `The running daemon was started without the ${provider} credentials this shell holds.`,
     {
       reason: 'provider-credentials-changed',
       provider,
-      hint: `The daemon was started with different credentials than this shell. Stop it (agent-device daemon stop --state-dir ${shellQuoteIfNeeded(daemon.stateDir)}), then rerun the command so a daemon starts with the current environment.`,
+      hint: `Stop it with agent-device daemon stop --state-dir ${shellQuoteIfNeeded(daemon.stateDir)}, then rerun the command so a new daemon starts with this shell's environment.`,
     },
   );
 }

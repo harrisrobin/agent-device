@@ -1,5 +1,3 @@
-import { AppError } from '@agent-device/kernel/errors';
-
 export const CLOUD_WEBDRIVER_PROVIDERS = {
   browserStack: 'browserstack',
   awsDeviceFarm: 'aws-device-farm',
@@ -22,19 +20,13 @@ export const BROWSERSTACK_CREDENTIAL_VARIABLES = {
   accessKey: 'BROWSERSTACK_ACCESS_KEY',
 } as const;
 
-/** The one reader of BrowserStack credentials in the environment. */
-export function requireBrowserStackCredentials(
+/** The BrowserStack credentials in the environment, exactly as every consumer and the fingerprint use them. */
+export function readBrowserStackCredentials(
   env: Readonly<Record<string, string | undefined>>,
-  consumer: string,
-): { username: string; accessKey: string } {
-  const read = (name: string): string => {
-    const value = env[name];
-    if (value) return value;
-    throw new AppError('INVALID_ARGS', `${consumer} requires ${name} in the environment.`);
-  };
+): Readonly<{ username?: string; accessKey?: string }> {
   return {
-    username: read(BROWSERSTACK_CREDENTIAL_VARIABLES.username),
-    accessKey: read(BROWSERSTACK_CREDENTIAL_VARIABLES.accessKey),
+    username: env[BROWSERSTACK_CREDENTIAL_VARIABLES.username] || undefined,
+    accessKey: env[BROWSERSTACK_CREDENTIAL_VARIABLES.accessKey] || undefined,
   };
 }
 

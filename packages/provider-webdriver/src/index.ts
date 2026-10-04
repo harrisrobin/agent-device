@@ -20,6 +20,7 @@ import type { CloudWebDriverRuntime } from './runtime.ts';
 export { CLOUD_WEBDRIVER_PROVIDERS };
 export { readAwsDeviceFarmRegionFromArn };
 export { parseBrowserStackAppReference } from './browserstack.ts';
+export { requireBrowserStackCredentials } from './provider-definitions.ts';
 export { rejectBrowserStackOnlyDeviceFeatures } from './browserstack-device-features.ts';
 export type { CloudWebDriverKnownProviderName } from './providers.ts';
 export type { ProviderWebDriverDependencies, RunHostCommand } from './dependencies.ts';

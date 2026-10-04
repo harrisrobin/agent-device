@@ -289,12 +289,16 @@ test('a daemon holding credentials allocates for a shell with none', async () =>
   assert.equal(outcome.allocations, 1);
 });
 
-test('a daemon started without credentials refuses a shell that has them', async () => {
+test('a daemon started without BrowserStack credentials refuses a shell that has them', async () => {
   const outcome = await allocateWithDaemonEnv(
-    providerAllocateRequest('limrun', providerCredentialFingerprint('limrun', LIMRUN_ATTACH_ENV)),
+    providerAllocateRequest(
+      'browserstack',
+      providerCredentialFingerprint('browserstack', BROWSERSTACK_ENV),
+    ),
     {},
   );
 
   assert.equal(outcome.allocations, 0);
   assert.equal(outcome.error?.details?.reason, 'provider-credentials-changed');
+  assert.match(String(outcome.error?.message), /started without the browserstack credentials/);
 });

@@ -139,7 +139,8 @@ function restrictRemoteHttpRequest(
     );
   }
   // A developer dir is a host path whose tools the daemon would run, and a credential fingerprint
-  // would let a remote caller probe the daemon's credentials, so only local callers set either.
+  // would let a remote caller probe the daemon's credentials. A daemon with an auth hook serves
+  // remote callers and runs on its operator's credentials, so it treats every caller as remote.
   const {
     developerDir: _developerDir,
     providerCredentialFingerprint: _providerCredentialFingerprint,

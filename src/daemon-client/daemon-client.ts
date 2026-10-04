@@ -31,7 +31,6 @@ import {
 import { sendRequest } from './daemon-client-transport.ts';
 import { isRemoteDaemon, type DaemonInfo } from './daemon-client-metadata.ts';
 import { leaseScopeFromRequest } from '@agent-device/contracts/lease-scope';
-import { providerCredentialFingerprint } from '../provider-credential-fingerprint.ts';
 
 export type DaemonRequest = SharedDaemonRequest;
 export type DaemonResponse = SharedDaemonResponse;
@@ -80,6 +79,7 @@ export async function sendToDaemon(
     info,
     requestId,
     debug,
+    await readLocalProviderCredentialFingerprint(requestWithoutAuthFlag, info),
   );
   emitDiagnostic({
     level: 'info',
@@ -123,6 +123,7 @@ function buildTransportRequest(
   info: DaemonInfo,
   requestId: string,
   debug: boolean,
+  providerCredentialFingerprint: string | undefined,
 ): DaemonRequest {
   return {
     ...request,
@@ -131,30 +132,32 @@ function buildTransportRequest(
     token: info.token,
     meta: {
       ...buildTransportRequestMeta(request, preparedRemoteRequest, requestId, debug),
-      ...buildLocalHostEnvMeta(request, info),
+      ...buildLocalHostEnvMeta(info),
+      providerCredentialFingerprint,
     },
   };
 }
 
-// A developer dir is a path on the client's host, and a remote daemon reads provider credentials
-// from its own host, so only a local daemon receives either.
-function buildLocalHostEnvMeta(
+// A remote daemon reads provider credentials from its own host, so only a local daemon is asked
+// to compare them, and only when a lease is allocated.
+async function readLocalProviderCredentialFingerprint(
   request: Omit<DaemonRequest, 'token'>,
   info: DaemonInfo,
-): Pick<NonNullable<DaemonRequest['meta']>, 'developerDir' | 'providerCredentialFingerprint'> {
-  if (isRemoteDaemon(info)) {
-    return { developerDir: undefined, providerCredentialFingerprint: undefined };
-  }
+): Promise<string | undefined> {
+  if (isRemoteDaemon(info) || request.command !== 'lease_allocate') return undefined;
+  const provider = leaseScopeFromRequest(request).leaseProvider;
+  if (!provider) return undefined;
+  const { providerCredentialFingerprint } = await import('../provider-credential-fingerprint.ts');
+  return providerCredentialFingerprint(provider, process.env);
+}
+
+// A developer dir is a path on the client's host, so only a local daemon can use it.
+function buildLocalHostEnvMeta(
+  info: DaemonInfo,
+): Pick<NonNullable<DaemonRequest['meta']>, 'developerDir'> {
   const developerDir = process.env.DEVELOPER_DIR;
-  const leaseProvider =
-    request.command === 'lease_allocate' ? leaseScopeFromRequest(request).leaseProvider : undefined;
-  const fingerprint = leaseProvider
-    ? providerCredentialFingerprint(leaseProvider, process.env)
-    : undefined;
-  return {
-    ...(developerDir !== undefined ? { developerDir } : {}),
-    providerCredentialFingerprint: fingerprint,
-  };
+  if (isRemoteDaemon(info)) return { developerDir: undefined };
+  return developerDir !== undefined ? { developerDir } : {};
 }
 
 function buildTransportRequestMeta(

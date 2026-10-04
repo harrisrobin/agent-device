@@ -37,16 +37,29 @@ test('a fingerprint ignores variables the provider does not read and blank value
 });
 
 test.for(['limrun', 'browserstack'])(
-  'a caller with no %s credentials sends no fingerprint, while a daemon without them records one',
+  'neither a caller nor a daemon without %s credentials has a fingerprint',
   (provider) => {
     expect(providerCredentialFingerprint(provider, {})).toBe(undefined);
     expect(providerCredentialFingerprint(provider, { LIMRUN_REGION: ' ' })).toBe(undefined);
-    const credentialed = { ...BROWSERSTACK_ENV, LIMRUN_API_KEY: 'lim-key' };
-    const empty = readDaemonProviderCredentials({}, '/state').fingerprints[provider];
-    expect(empty).toMatch(/^v1:[0-9a-f]{16}$/);
-    expect(providerCredentialFingerprint(provider, credentialed)).not.toBe(empty);
+    expect(readDaemonProviderCredentials({}, '/state').fingerprints[provider]).toBe(undefined);
   },
 );
+
+test('a fingerprint hashes the exact values each provider reads', () => {
+  const browserstack = providerCredentialFingerprint('browserstack', BROWSERSTACK_ENV);
+  expect(
+    providerCredentialFingerprint('browserstack', {
+      ...BROWSERSTACK_ENV,
+      BROWSERSTACK_ACCESS_KEY: 'key-1 ',
+    }),
+  ).not.toBe(browserstack);
+  const limrun = providerCredentialFingerprint('limrun', { LIMRUN_API_KEY: 'lim-key' });
+  expect(providerCredentialFingerprint('limrun', { LIMRUN_API_KEY: ' lim-key ' })).toBe(limrun);
+});
+
+test('a provider name that only matches an inherited object key has no fingerprint', () => {
+  expect(providerCredentialFingerprint('constructor', BROWSERSTACK_ENV)).toBe(undefined);
+});
 
 test('AWS Device Farm has no environment fingerprint', () => {
   expect(providerCredentialFingerprint('aws-device-farm', { AWS_ACCESS_KEY_ID: 'id' })).toBe(

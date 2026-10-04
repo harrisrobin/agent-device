@@ -3,9 +3,9 @@ import {
   parseBrowserStackAppReference,
   readAwsDeviceFarmRegionFromArn,
   rejectBrowserStackOnlyDeviceFeatures,
+  requireBrowserStackCredentials,
   type CloudWebDriverKnownProviderName,
 } from '@agent-device/provider-webdriver';
-import { requireBrowserStackCredentials } from '@agent-device/provider-webdriver/providers';
 import type { RemoteConfigProfile } from '../../remote/remote-config-schema.ts';
 import { AppError } from '@agent-device/kernel/errors';
 import type { PlatformSelector } from '@agent-device/kernel/device';

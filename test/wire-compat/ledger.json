@@ -227,7 +227,7 @@
     {
       "declaration": "src/daemon/server/http-server.ts#toLeaseDaemonRequest",
       "digest": "sha256:e7e2aef6c74af7e70e88b3cb9abc89e356a25809365477ba6ee29733b40bc0cb",
-      "rationale": "Reads the optional providerCredentialFingerprint lease-allocation parameter into request meta, so a local caller over HTTP gets the same credential check as over the socket. Released protocol-2 clients omit it and follow the unchanged allocation path; no existing field is required or reinterpreted."
+      "rationale": "Reads the optional providerCredentialFingerprint lease-allocation parameter into request meta, so a local caller over HTTP gets the same credential check as over the socket. A daemon with an auth hook treats every HTTP caller as remote and strips it, as it does developerDir. Released protocol-2 clients omit it and follow the unchanged allocation path; no existing field is required or reinterpreted."
     },
     {
       "declaration": "packages/kernel/src/errors.ts#DaemonError",
