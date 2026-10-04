@@ -120,7 +120,7 @@ export async function ensureRunnerSession(
     }
   });
   const { raceRunnerStartAgainstCaller } = await import('./runner-start-budget.ts');
-  return await raceRunnerStartAgainstCaller(start, options.signal);
+  return await raceRunnerStartAgainstCaller(start, options.signal, device.id);
 }
 
 /** How long the device-readiness probe may take, bounded by the startup budget it runs inside. */
@@ -675,6 +675,8 @@ export async function stopIosRunnerSession(deviceId: string): Promise<void> {
  * or wedges, so pooling it back hands the same stalled process to the next `open` (#2552). An idle
  * retained runner keeps warm reuse via the idle-stop timer. The decision is owned here because the
  * occupancy fact lives on the session, and awaited so `close` returns only once the lease is gone.
+ * A close that stops the device stops its in-flight runner build too (#3177): the build is the
+ * resource a session teardown promises to leave behind, not an orphan for the next `open` to race.
  */
 export async function releaseIosRunnerOnClose(
   deviceId: string,
@@ -693,6 +695,7 @@ export async function releaseIosRunnerOnClose(
     });
   }
   await stopIosRunnerSession(deviceId);
+  await stopRunnerPrepProcesses(deviceId);
 }
 
 export async function abortAllIosRunnerSessions(): Promise<void> {

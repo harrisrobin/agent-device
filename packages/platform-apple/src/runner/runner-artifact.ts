@@ -60,7 +60,45 @@ import { resolveAppleRunnerProjectPath } from './runner-source.ts';
 export { prepareXctestrunWithEnv } from './runner-artifact-env.ts';
 
 const runnerXctestrunBuildLocks = new Map<string, Promise<unknown>>();
-export const runnerPrepProcesses = new Set<ExecBackgroundResult['child']>();
+
+type RunnerPrepProcess = Readonly<{
+  deviceId: string;
+  child: ExecBackgroundResult['child'];
+}>;
+
+const runnerPrepProcessLedger = new Set<RunnerPrepProcess>();
+
+/**
+ * Records a prep subprocess (`xcodebuild build-for-testing`) against the device it builds for, so
+ * a request canceled while waiting on that build can stop it (#3177). The build child keeps its
+ * owning start's signal as its first cancel path; this ledger is the device-scoped second one, for
+ * the waiters whose cancellation the spawn never saw.
+ */
+export function registerRunnerPrepProcess(
+  deviceId: string,
+  child: ExecBackgroundResult['child'],
+): void {
+  const entry: RunnerPrepProcess = { deviceId, child };
+  runnerPrepProcessLedger.add(entry);
+  child.on('close', () => {
+    runnerPrepProcessLedger.delete(entry);
+  });
+}
+
+/** The prep subprocesses still running, for one device or for every device when none is named. */
+export function runnerPrepProcessChildren(
+  deviceId?: string,
+): readonly ExecBackgroundResult['child'][] {
+  return [...runnerPrepProcessLedger]
+    .filter((entry) => deviceId === undefined || entry.deviceId === deviceId)
+    .map((entry) => entry.child);
+}
+
+export function forgetRunnerPrepProcess(child: ExecBackgroundResult['child']): void {
+  for (const entry of runnerPrepProcessLedger) {
+    if (entry.child === child) runnerPrepProcessLedger.delete(entry);
+  }
+}
 
 export type RunnerXctestrunArtifactState = 'valid' | 'rebuilt';
 
@@ -484,10 +522,7 @@ async function buildRunnerXctestrun(
         timeoutMs: buildTimeoutMs,
         signal: options.budget?.signal,
         onSpawn: (child) => {
-          runnerPrepProcesses.add(child);
-          child.on('close', () => {
-            runnerPrepProcesses.delete(child);
-          });
+          registerRunnerPrepProcess(device.id, child);
         },
         onStdoutChunk: (chunk) => {
           logChunk(chunk, options.logPath, options.traceLogPath, options.verbose);

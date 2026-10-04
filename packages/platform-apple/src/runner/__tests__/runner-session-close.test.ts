@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
+import { EventEmitter } from 'node:events';
 import { beforeEach, test, vi } from 'vitest';
+import type { ExecBackgroundResult } from '@agent-device/host-kit/command';
 import { IOS_SIMULATOR } from './device-fixtures.ts';
 import { appleRunnerTestHost } from '../test-host.ts';
 import {
@@ -105,6 +107,7 @@ import {
   readRunnerSessionLiveness,
   releaseIosRunnerOnClose,
 } from '../runner-session.ts';
+import { registerRunnerPrepProcess, runnerPrepProcessChildren } from '../runner-xctestrun.ts';
 
 // Test-only stand-in for the daemon's runtime lease-owner-state-dir setter (root-only; the package
 // cannot import it). Backs the host.leaseOwnerStateDir() getter the package reads instead.
@@ -316,4 +319,28 @@ test('releaseIosRunnerOnClose retains an idle runner, disposes a busy one, and t
   // Non-retained close: stops regardless of occupancy.
   await releaseIosRunnerOnClose(device.id, { retain: false });
   assert.equal(readRunnerSessionLiveness(device.id), null);
+});
+
+/**
+ * A close that stops the device stops its in-flight runner build too (#3177). The build behind a
+ * cold start is the resource a session teardown promises to leave behind, not an orphan for the
+ * next `open` to race on the shared runner derived-data root.
+ */
+test('releaseIosRunnerOnClose stops the device build still in flight (#3177)', async () => {
+  const device = { ...IOS_SIMULATOR, id: 'runner-session-close-build-sim' };
+  await ensureRunnerSession(device, {});
+  const build = Object.assign(new EventEmitter(), {
+    pid: 4747,
+    exitCode: null,
+  }) as ExecBackgroundResult['child'];
+  registerRunnerPrepProcess(device.id, build);
+
+  await releaseIosRunnerOnClose(device.id, { retain: false });
+
+  const signaledPids = mockSignalProcessGroupBestEffort.mock.calls.map(([pid]) => pid);
+  assert.ok(
+    signaledPids.includes(4747),
+    'the non-retained close tree-killed the build still in flight',
+  );
+  assert.equal(runnerPrepProcessChildren(device.id).length, 0, 'the build left the prep ledger');
 });

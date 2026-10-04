@@ -25,7 +25,11 @@ import {
   type RunnerLeaseCleanupAdapter,
   type RunnerXcodebuildCleanupTarget,
 } from './runner-lease.ts';
-import { IOS_RUNNER_CONTAINER_BUNDLE_IDS, runnerPrepProcesses } from './runner-xctestrun.ts';
+import {
+  forgetRunnerPrepProcess,
+  IOS_RUNNER_CONTAINER_BUNDLE_IDS,
+  runnerPrepProcessChildren,
+} from './runner-xctestrun.ts';
 import { advanceRunnerSessionState, type RunnerSession } from './runner-session-types.ts';
 
 export const RUNNER_INVALIDATE_WAIT_TIMEOUT_MS = 1_000;
@@ -88,7 +92,7 @@ export async function cleanupOwnedIosRunnerLease(deviceId: string): Promise<void
 export async function abortRunnerSessionsAndPrepProcesses(
   activeSessions: readonly RunnerSession[],
 ): Promise<void> {
-  const prepProcesses = Array.from(runnerPrepProcesses);
+  const prepProcesses = runnerPrepProcessChildren();
   const macOsSessions = activeSessions.filter((session) => isMacOs(session.device));
   const otherSessions = activeSessions.filter((session) => !isMacOs(session.device));
   for (const session of activeSessions) {
@@ -108,15 +112,20 @@ export async function abortRunnerSessionsAndPrepProcesses(
   );
 }
 
-export async function stopRunnerPrepProcesses(): Promise<void> {
-  const prepProcesses = Array.from(runnerPrepProcesses);
+/**
+ * Stops the prep subprocesses (the `xcodebuild build-for-testing` behind a cold runner start)
+ * with the tree-kill escalation the sessions get. A device stops only its own builds: the caller
+ * that stops device A's session must not sweep device B's in-flight build (#3177).
+ */
+export async function stopRunnerPrepProcesses(deviceId?: string): Promise<void> {
+  const prepProcesses = runnerPrepProcessChildren(deviceId);
   await Promise.allSettled(
     prepProcesses.map(async (child) => {
       try {
         await killRunnerProcessTree(child.pid, 'SIGTERM');
         await killRunnerProcessTree(child.pid, 'SIGKILL');
       } finally {
-        runnerPrepProcesses.delete(child);
+        forgetRunnerPrepProcess(child);
       }
     }),
   );
@@ -311,7 +320,7 @@ async function signalRunnerPrepProcesses(
     prepProcesses.map(async (child) => {
       await killRunnerProcessTree(child.pid, signal);
       if (signal === 'SIGKILL') {
-        runnerPrepProcesses.delete(child);
+        forgetRunnerPrepProcess(child);
       }
     }),
   );
