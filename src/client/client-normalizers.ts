@@ -397,7 +397,6 @@ export function buildMeta(options: InternalRequestOptions): DaemonRequest['meta'
     lockPolicy: options.lockPolicy,
     lockPlatform: options.lockPlatform,
     ...leaseScopeToRequestMeta(leaseScope),
-    providerCredentialFingerprint: options.providerCredentialFingerprint,
     sessionIsolation: options.sessionIsolation,
     installSource: options.installSource,
     retainMaterializedPaths: options.retainMaterializedPaths,

@@ -25,8 +25,6 @@ export type RemoteConfigProfile = RemoteConfigMetroOptions &
     iosSimulatorDeviceSet?: string;
     androidDeviceAllowlist?: string;
     session?: string;
-    /** What `connect` saw of the provider credentials, for a local daemon to compare with its own. */
-    providerCredentialFingerprint?: string;
   };
 
 export type RemoteConfigProfileOptions = {
@@ -125,7 +123,6 @@ const REMOTE_CONFIG_LEASE_FIELD_SPECS = [
   { key: 'leaseProvider', type: 'string', env: false },
   { key: 'deviceKey', type: 'string', env: false },
   { key: 'clientId', type: 'string', env: false },
-  { key: 'providerCredentialFingerprint', type: 'string', env: false },
 ] as const satisfies readonly RemoteConfigFieldSpec[];
 
 export const REMOTE_CONFIG_PROFILE_FIELD_SPECS = [

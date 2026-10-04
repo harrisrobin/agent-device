@@ -32,8 +32,6 @@ export type LeaseAllocateOptions = LeaseOptions & {
   provider?: string;
   deviceKey?: string;
   clientId?: string;
-  /** The credential fingerprint `connect` recorded; a local daemon holding other credentials refuses. */
-  providerCredentialFingerprint?: string;
 };
 
 export type LeaseScopedOptions = LeaseOptions & {

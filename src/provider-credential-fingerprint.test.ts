@@ -1,7 +1,7 @@
 import { expect, test } from 'vitest';
 import {
   providerCredentialFingerprint,
-  providerCredentialFingerprints,
+  readDaemonProviderCredentials,
 } from './provider-credential-fingerprint.ts';
 
 const BROWSERSTACK_ENV = { BROWSERSTACK_USERNAME: 'user', BROWSERSTACK_ACCESS_KEY: 'key-1' };
@@ -43,7 +43,7 @@ test('AWS Device Farm has no environment fingerprint', () => {
   expect(providerCredentialFingerprint('aws-device-farm', { AWS_ACCESS_KEY_ID: 'id' })).toBe(
     undefined,
   );
-  expect(Object.keys(providerCredentialFingerprints({})).sort()).toEqual([
+  expect(Object.keys(readDaemonProviderCredentials({}, '/state').fingerprints).sort()).toEqual([
     'browserstack',
     'limrun',
   ]);
@@ -51,7 +51,7 @@ test('AWS Device Farm has no environment fingerprint', () => {
 
 test('a fingerprint never contains a credential value', () => {
   const fingerprints = JSON.stringify(
-    providerCredentialFingerprints({ ...BROWSERSTACK_ENV, LIMRUN_API_KEY: 'lim-key' }),
+    readDaemonProviderCredentials({ ...BROWSERSTACK_ENV, LIMRUN_API_KEY: 'lim-key' }, '/state'),
   );
   for (const value of ['user', 'key-1', 'lim-key']) expect(fingerprints).not.toContain(value);
 });

@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict';
 import { expect, test } from 'vitest';
 import {
-  buildMeta,
   normalizeDevice,
   normalizeOpenForegroundComposition,
   normalizeRuntimeHints,
@@ -81,13 +80,4 @@ test('device normalization carries the listed model and OS version and drops mal
   const malformed = normalizeDevice({ ...base, model: '', osVersion: 16 });
   expect(malformed).not.toHaveProperty('model');
   expect(malformed).not.toHaveProperty('osVersion');
-});
-
-test('request metadata carries the provider credential fingerprint', () => {
-  expect(
-    buildMeta({ leaseProvider: 'limrun', providerCredentialFingerprint: 'v1:0123456789abcdef' }),
-  ).toMatchObject({
-    leaseProvider: 'limrun',
-    providerCredentialFingerprint: 'v1:0123456789abcdef',
-  });
 });

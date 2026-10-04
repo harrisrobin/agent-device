@@ -9,6 +9,8 @@ export type LimrunCredentials = Readonly<{
   instances?: LimrunInstanceAccess;
 }>;
 
+const ACCOUNT_VARS = { apiKey: 'LIMRUN_API_KEY', region: 'LIMRUN_REGION' } as const;
+
 const INSTANCE_VARS = {
   ios: ['LIM_IOS_INSTANCE_URL', 'LIM_IOS_INSTANCE_TOKEN'],
   android: [
@@ -20,8 +22,7 @@ const INSTANCE_VARS = {
 
 /** Every variable that selects which Limrun account or instance the credentials reach. */
 export const LIMRUN_CREDENTIAL_VARIABLES: readonly string[] = [
-  'LIMRUN_API_KEY',
-  'LIMRUN_REGION',
+  ...Object.values(ACCOUNT_VARS),
   ...INSTANCE_VARS.ios,
   ...INSTANCE_VARS.android,
 ];
@@ -36,8 +37,8 @@ export function limrunInstanceVariables(platform: 'ios' | 'android'): readonly s
  * names, so an orchestrator hands a sandbox one set of variables for both tools.
  */
 export function readLimrunCredentials(env: EnvMap): LimrunCredentials | undefined {
-  const apiKey = env.LIMRUN_API_KEY?.trim() || undefined;
-  const region = env.LIMRUN_REGION?.trim() || undefined;
+  const apiKey = env[ACCOUNT_VARS.apiKey]?.trim() || undefined;
+  const region = env[ACCOUNT_VARS.region]?.trim() || undefined;
   const keepAlive = ['1', 'true'].includes(env.LIMRUN_KEEP_ALIVE?.trim().toLowerCase() ?? '');
   const ios = readInstanceVars(env, INSTANCE_VARS.ios);
   const android = readInstanceVars(env, INSTANCE_VARS.android);

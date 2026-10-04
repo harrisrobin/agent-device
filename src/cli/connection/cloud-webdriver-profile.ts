@@ -13,11 +13,7 @@ import type { CliFlags } from '@agent-device/contracts/command';
 import fs from 'node:fs';
 import path from 'node:path';
 import { type EnvMap } from '@agent-device/kernel/source-value';
-import {
-  readCloudDeviceFeatureProfileFields,
-  readMetroProfileFields,
-  readProviderCredentialProfileField,
-} from './profile-fields.ts';
+import { readCloudDeviceFeatureProfileFields, readMetroProfileFields } from './profile-fields.ts';
 import { persistAndResolveGeneratedProfile } from './generated-config.ts';
 import { resolveRequestedLeaseBackend } from '../commands/connection-runtime.ts';
 import { buildConnectClientId } from './client-id.ts';
@@ -47,7 +43,6 @@ export function resolveCloudWebDriverConnectProfile(options: {
     session: options.flags.session,
     ...providerConfig,
     ...readMetroProfileFields(options.flags),
-    ...readProviderCredentialProfileField(options.provider, options.flags, options.env ?? {}),
   };
   return persistAndResolveGeneratedProfile({
     stateDir: options.stateDir,

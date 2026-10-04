@@ -9,7 +9,7 @@ import { AppError } from '@agent-device/kernel/errors';
 import { clearRequestCanceled, markRequestCanceled } from '@agent-device/host-kit/request';
 import {
   providerCredentialFingerprint,
-  providerCredentialFingerprints,
+  readDaemonProviderCredentials,
 } from '../../../provider-credential-fingerprint.ts';
 import {
   HUMAN_CONTROL_LEASE_REQUEST,
@@ -215,7 +215,7 @@ async function allocateWithDaemonEnv(
       sessionName: req.session,
       sessionStore: makeSessionStore('agent-device-provider-credentials-'),
       leaseRegistry: registry,
-      providerCredentialFingerprints: providerCredentialFingerprints(daemonEnv),
+      providerCredentials: readDaemonProviderCredentials(daemonEnv, '/tmp/agent device state'),
       leaseLifecycleProvider: {
         allocate: async () => {
           allocations += 1;
@@ -230,7 +230,7 @@ async function allocateWithDaemonEnv(
   return { allocations };
 }
 
-test('a daemon started with only LIMRUN_API_KEY refuses an attach-mode profile before allocation', async () => {
+test('a daemon started with only LIMRUN_API_KEY refuses a shell with instance variables before allocation', async () => {
   const outcome = await allocateWithDaemonEnv(
     providerAllocateRequest('limrun', providerCredentialFingerprint('limrun', LIMRUN_ATTACH_ENV)),
     { LIMRUN_API_KEY: 'lim-key' },
@@ -240,7 +240,10 @@ test('a daemon started with only LIMRUN_API_KEY refuses an attach-mode profile b
   assert.equal(outcome.error?.code, 'INVALID_ARGS');
   assert.equal(outcome.error?.details?.reason, 'provider-credentials-changed');
   assert.equal(outcome.error?.details?.provider, 'limrun');
-  assert.match(String(outcome.error?.details?.hint), /agent-device daemon stop/);
+  assert.match(
+    String(outcome.error?.details?.hint),
+    /agent-device daemon stop --state-dir '\/tmp\/agent device state'/,
+  );
 });
 
 test('a daemon holding rotated BrowserStack keys refuses before allocation', async () => {
@@ -264,7 +267,7 @@ test.for([
   ['limrun', LIMRUN_ATTACH_ENV],
   ['browserstack', BROWSERSTACK_ENV],
 ] as const)(
-  'a daemon holding the %s credentials connect saw allocates',
+  'a daemon holding the %s credentials of the shell allocates',
   async ([provider, env]) => {
     const outcome = await allocateWithDaemonEnv(
       providerAllocateRequest(provider, providerCredentialFingerprint(provider, env)),

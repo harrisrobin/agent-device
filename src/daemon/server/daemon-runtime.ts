@@ -25,7 +25,7 @@ import {
   createDaemonProviderRuntimeComposition,
   DEFAULT_PROVIDER_RUNTIME_REQUIRED_IDS,
 } from '../../provider-device-runtimes.ts';
-import { providerCredentialFingerprints } from '../../provider-credential-fingerprint.ts';
+import { readDaemonProviderCredentials } from '../../provider-credential-fingerprint.ts';
 import { LeaseRegistry } from '../lease-registry.ts';
 import { createExpiredProviderLeaseReleaser } from '../provider-lease-expiry.ts';
 import { createRequestHandler } from '../request-router.ts';
@@ -447,7 +447,7 @@ export async function startDaemonRuntime(
     platformResourceCleanup,
     providerRuntimeIds: providerRuntimeProviders.providerRuntimeIds,
     providerRuntimeRequiredIds: providerRuntimeProviders.providerRuntimeRequiredIds,
-    providerCredentialFingerprints: providerCredentialFingerprints(env),
+    providerCredentials: readDaemonProviderCredentials(env, baseDir),
     providerDeviceRuntimeScope: providerRuntimeProviders.providerDeviceRuntimeScope,
     trackDownloadableArtifact,
     daemonPolicy,

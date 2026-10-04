@@ -22,14 +22,23 @@ export function providerCredentialFingerprint(provider: string, env: EnvMap): st
   return names ? digestVariables(names, env) : undefined;
 }
 
-/** The fingerprint of every provider whose credentials come from the environment. */
-export function providerCredentialFingerprints(env: EnvMap): Readonly<Record<string, string>> {
-  return Object.fromEntries(
+/** The provider credentials a daemon started with, and the state dir that names that daemon. */
+export type DaemonProviderCredentials = Readonly<{
+  fingerprints: Readonly<Record<string, string>>;
+  stateDir: string;
+}>;
+
+export function readDaemonProviderCredentials(
+  env: EnvMap,
+  stateDir: string,
+): DaemonProviderCredentials {
+  const fingerprints = Object.fromEntries(
     Object.entries(PROVIDER_CREDENTIAL_VARIABLES).map(([provider, names]) => [
       provider,
       digestVariables(names, env),
     ]),
   );
+  return { fingerprints, stateDir };
 }
 
 function digestVariables(names: readonly string[], env: EnvMap): string {
